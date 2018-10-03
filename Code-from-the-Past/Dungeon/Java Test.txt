@@ -1,0 +1,471 @@
+Hey Justin,
+
+    Below is the code that I wrote for the question you sent me.  I wrote the program in Java.  This
+program works best when the Dungeon and Room classes are in their separate Java files.  The generate
+function is the constructor for the Dungeon class so a random dungeon is generated when you create a new
+dungeon.
+
+    I choose Java because I prefer the way classes are created and it has enough built-in features that
+it was the most efficent way to code for me.  I wanted to use object as opposed to just regular data
+structures I find it easiser to keep track of methods when they are assigned to a class as opposed to
+data structures used in random functions.  I had some conccerns about Java since it does not run as
+fast as executable and does its own garbage collection.
+
+    The program starts off by asking the user for the number of rooms they would like the dungeon to be.
+Once the user enters a integer greater than or equal to two, the constructor for the dungeon will
+generate the specified number of rooms and connect them one by one to the already connected rooms.  This
+guarantes that there is o path from any one room to any other room.
+
+    I created a Room class to handle the functionallity of a room, which in this case was to keep track
+of the rooms adjacent to the room object.  Also, since objects in Java are references, the adjacent Rooms
+to a Room are pointer and don't require more memory to create a copy of the adjacent Rooms.  I created a
+Dungeon class which is an ArrayList of Rooms.  I kept the list of Rooms sorted by name so it is faster to find a specific room (O(n/2)).  I also added
+extra features such as adding new rooms to and deleting rooms from the dungeon as well so the classes
+can be used in greater capacity.  I also made all members protected as opposed to private so the classes
+can be fully functional for inheritance.
+
+
+import java.io.*;
+import java.util.*;
+import java.lang.*;
+
+//Dungeon class
+public class Dungeon
+{
+    protected int numRooms = 0; //Total number of rooms in the Dungeon
+    protected List<Room> rooms = new ArrayList<Room>(); //List of Room objects
+    
+    //Main Function
+    public static void main(String[] args)throws IOException
+    {
+        boolean badRead;
+        BufferedReader bin = new BufferedReader(new InputStreamReader(System.in));
+        int num;
+        do
+        {
+            badRead = false;
+            num = 0;
+            System.out.println("Please enter the number of rooms for the dungeon.");
+            System.out.println("The number of rooms must be greater than or equal to 2.");
+            String number = bin.readLine();
+            
+            try
+            { 
+                num = Integer.parseInt(number);
+            }
+            
+            catch(NumberFormatException e)
+            {
+                badRead = true;
+            }
+            
+            if(!badRead && num < 2)
+            {
+                badRead = true;
+            }
+        }while(badRead);
+        
+        Dungeon dungeon = new Dungeon(num);
+        dungeon.printDungeon();
+    }
+    
+    //Constructor to generate the dungeon
+    public Dungeon (int num)
+    {
+        if(num < 2)
+            System.out.println("There are too few rooms.");
+            
+        else
+        {
+            Room start = new Room("Start");
+            Room exit = new Room("Exit");
+            
+            if(!this.addRoom(start) || !this.addRoom(exit))
+                System.out.println("Dungeon failed to create.");
+                
+            else
+            {
+                System.out.println("Start and Exit rooms created and added.");
+                
+                //After the start and exit rooms are created, the rest of the rooms
+                //are given a random type and sequenchal number.
+                String[] types = {"monster", "trap", "treasure", "empty"};
+                Random die = new Random();
+                String rName;
+                
+                //Adds a number of random room that is two less than the indicated value.
+                for(int i = 0; i < num-2; i++)
+                {
+                    //Rooms are added one at a time to the list.
+                    rName = types[die.nextInt(4)];
+                    Room temp = new Room(rName+" "+i);
+                    if(!this.addRoom(temp))
+                        System.out.println("Could not add "+rName+" "+i+".");
+                        
+                    else
+                        System.out.println(rName+" "+i+" has been added.");
+                }
+                
+                //Randomly attaching the rooms
+                int dir;
+                int select;
+                int[] picked = new int[numRooms];
+                int pSize = 0;
+                String[] directions = {"above", "below", "north",
+                                        "south", "east", "west"};
+                
+                //Loop through each of the rooms in the list.
+                for(int i=0; i < numRooms; i++)
+                {
+                    //The first room is simply put in the picked array.
+                    //Picked array's size is increased.
+                    if(i==0)
+                    {
+                        picked[0] = 0;
+                        pSize = 1;
+                    }
+                   
+                    //With the rest of the rooms, a random picked room and direction are selected
+                    //until there is one that is free.  That room is attached to the current room at
+                    //the indicated direction. The current room is move to the picked pile.
+                    //Picked array's size is increased.
+                    else
+                    {
+                        do
+                        {
+                            select = die.nextInt(pSize);
+                            dir = die.nextInt(6);
+                        }while(rooms.get(select).isAttached(directions[dir]));
+                        
+                        rooms.get(select).setAdjacent(rooms.get(i), directions[dir]);
+                        picked[i] = i;
+                        pSize++;
+                    }
+                }
+            }
+        }
+    }
+    
+    //Return the number of rooms in Dungeon
+    public int getRooms()
+    {
+        return numRooms;
+    }
+    
+    public Room getRoom(int i)
+    {
+        return rooms.get(i);
+    }
+    
+    //Function to add a room to the duneon 
+    public boolean addRoom(Room r)
+    {
+        //Check to see if the room does not exist
+        //So each room is unique.
+        if(!findRoom(r)) 
+        {
+            rooms.add(r); //Add room to the list of Rooms
+            numRooms++; //Increase the number of total rooms
+            sort(); // Sort room List
+            return true;
+        }
+        
+        else  //If room does exist, don't add and return false
+            return false;
+    }
+    
+    //Function that finds a room in the list of sorted rooms in the dungeon
+    //Uses a binary searth tree to to have search be O(n/2)
+    public boolean findRoom(Room r)
+    {
+        int start = 0;
+        int end = numRooms-1;
+        
+        while (start <= end)
+        {
+            int mid = (start + end)/2;
+            
+            if(rooms.get(mid).getName().compareTo(r.getName()) == 0)
+                return true;
+                
+            else if(r.getName().compareTo(rooms.get(mid).getName()) < 0)
+                end = mid -1 ;
+            
+            else
+                start = mid + 1;
+        }
+        
+        return false;
+    }
+    
+    //Function that finds the index of a named room in the dungeon
+    //Uses a binary searth tree to to have search be O(n/2)
+    public int findIndex(String room)
+    {
+        int start = 0;
+        int end = numRooms-1;
+        
+        while (start <= end)
+        {
+            int mid = (start + end)/2;
+            
+            if(rooms.get(mid).getName().compareTo(room) == 0)
+                return mid;
+                
+            else if(room.compareTo(rooms.get(mid).getName()) < 0)
+                end = mid -1 ;
+            
+            else
+                start = mid + 1;
+        }
+        
+        return -1;
+    }
+    
+    //Delete function
+    //Uses Room's disconnect function and removes the room.
+    //O(n/2) using findIndex
+    public boolean delRoom(String room)
+    {
+        int index = findIndex(room);
+        
+        if(index == -1)
+            return false;
+        
+        else
+        {
+            rooms.get(index).disconnect();
+            rooms.remove(index);
+            return true;
+        }
+    }
+    
+    // This is a a reverse bubble sort.
+    // This is used since the list is sorted with every addition of
+    // a room to the list of rooms in the dungeon.  O(n/2)
+    // If there would be several rooms added to the list at a time
+    //  Then I would have used quick sort.
+    public void sort()
+    {
+        if(numRooms > 1)
+        {
+            int curr = numRooms - 1;
+            
+            while(curr > 0 && rooms.get(curr).getName().compareTo(rooms.get(curr-1).getName()) < 0)
+            {
+                Room temp = rooms.get(curr);
+                rooms.set(curr, rooms.get(curr-1));
+                rooms.set(curr-1, temp);
+                curr--;
+            }
+        }
+    }
+    
+    //Prints the rooms in the dungeon and
+    //calls printAdjacent to print each rooms
+    //adjacent rooms.
+    public void printDungeon()
+    {
+        for(int i = 0; i < numRooms; i++)
+        {
+            Room temp = rooms.get(i);
+            System.out.println("Room Name: " + temp.getName());
+            temp.printAdjacent();
+        }
+    }
+}
+
+import java.io.*;
+import java.util.*;
+import java.lang.*;
+
+// Room class
+public class Room
+{
+    //I thought of using a hash tables for
+    //the adjacent references.  The reason why
+    //I didn't is because Java creates enumerations
+    //to access keys and values in a Hashtable and
+    //I wanted to save space and garbage collection time.
+    protected String name;
+    protected Room above;
+    protected Room below;
+    protected Room north;
+    protected Room south;
+    protected Room east;
+    protected Room west;
+    
+    //Room constructor
+    public Room (String n)
+    {
+        name = n;
+        above = null;
+        below = null;
+        north = null;
+        south = null;
+        east = null;
+        west = null;
+    }
+    
+    //Checks to see if the current room is adjacent to the other room
+    //and connected in the right direction.
+    public boolean isAdjacent(Room other)
+    {
+        if(this.above.getName() == other.getName() && other.below.getName() == this.getName())
+            return true;
+            
+        else if(this.below.getName() == other.getName() && other.above.getName() == this.getName())
+            return true;
+            
+        else if(this.north.getName() == other.getName() && other.south.getName() == this.getName())
+            return true;
+            
+        else if(this.south.getName() == other.getName() && other.north.getName() == this.getName())
+            return true;
+            
+        else if(this.east.getName() == other.getName() && other.west.getName() == this.getName())
+            return true;
+            
+        else if(this.west.getName() == other.getName() && other.east.getName() == this.getName())
+            return true;
+            
+        else
+            return false;
+        
+    }
+    
+    //Sets other room adjacent to this room in the direction specified.
+    public void setAdjacent(Room other, String direction)
+    {
+        if(direction == "above")
+        {
+            this.above = other;
+            other.below = this;
+        }
+        
+        else if(direction == "below")
+        {
+            this.below = other;
+            other.above = this;
+        }
+        
+        else if(direction == "north")
+        {
+            this.north = other;
+            other.south = this;
+        }
+        
+        if(direction == "south")
+        {
+            this.south = other;
+            other.north = this;
+        }
+        
+        if(direction == "east")
+        {
+            this.east = other;
+            other.west = this;
+        }
+        
+        if(direction == "west")
+        {
+            this.west = other;
+            other.east = this;
+        }
+    }
+    
+    //This function is used to notify the programmer
+    //If the room is adjacent to a room in the specified
+    //direction.
+    public boolean isAttached(String direction)
+    {
+        if(direction == "above")
+            return above != null;
+        
+        else if(direction == "below")
+            return below != null;
+        
+        else if(direction == "north")
+            return north != null;
+        
+        else if(direction == "south")
+            return south != null;
+        
+        else if(direction == "east")
+            return east != null;
+        
+        else if(direction == "west")
+            return west != null;
+        
+        else
+            return false;
+    }
+    
+    public String getName()
+    {
+        return name;
+    }
+    
+    //Printing all rooms that are adjacent to the current room.
+    public void printAdjacent()
+    {
+        if(north != null)
+            System.out.println("North: " + north.getName());
+            
+        if(south != null)
+            System.out.println("South: " + south.getName());
+        
+        if(east != null)   
+            System.out.println("East: " + east.getName());
+            
+        if(west != null)
+            System.out.println("West: " + west.getName());
+            
+        if(above != null)
+            System.out.println("Above: " + above.getName());
+            
+        if(below != null)
+            System.out.println("Below: " + below.getName());
+    }
+    
+    //The disconnect function is used to disconnect a room
+    //from it's adjacent rooms before it is deleted.
+    public void disconnect()
+    {
+        if(north != null)
+        {
+            north.south = null;
+            north = null;
+        }
+        
+        if(south != null)
+        {
+            south.north = null;
+            south = null;
+        }
+        
+        if(east != null)
+        {
+            east.west = null;
+            east = null;
+        }
+        
+        if(west != null)
+        {
+            west.east = null;
+            west = null;
+        }
+        
+        if(north != null)
+        {
+            north.south = null;
+            north = null;
+        }
+        
+        if(south != null)
+        {
+            south.north = null;
+            south = null;
+        }
+    }
+}
