@@ -23,10 +23,12 @@
  */
 
 //MySQL Sever, MySQL Database, Path for Web Service Calls and Login Redirect
-define('HOST', 'localhost');
-define('DATABASE', 'HainesConnect');
-define('PATH', 'http://jjh400.jjhaines.com/danciko/dancik-ows/d24/');
-define('REDIRECT', "Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login");
+define('HC_HOST', "wordpressstackbuild005-rds-zqc3a8-databasecluster-8d6sph6bk7ti.cluster-cxuflrtukmtq.us-east-1.rds.amazonaws.com");
+//define('HC_HOST', 'localhost');
+define('HC_DATABASE', 'HainesConnect');
+define('HC_PATH', 'http://jjh400.jjhaines.com/danciko/dancik-ows/d24/');
+//define('HC_REDIRECT', "Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login");
+define('HC_REDIRECT', "Location:  https://jjhaines.net/test-login/");
 
 //Extract Session ID's from the JSON
 function extractSessionID($json)
@@ -261,7 +263,7 @@ function printMillClaim($result)
 //Product Search Function
 function productSearch()
 {
-    $json_str = file_get_contents(PATH."getItemsForAccount?d24user=".$_SESSION['username']."&d24sesid=".$_SESSION['sesid']."&d24_acctid=".$_SESSION['acctid']);
+    $json_str = file_get_contents(HC_PATH."getItemsForAccount?d24user=".$_SESSION['username']."&d24sesid=".$_SESSION['sesid']."&d24_acctid=".$_SESSION['acctid']);
     $products = json_decode($json_str, true);
     $items = $products['items'];
     printItems($items);
@@ -271,7 +273,7 @@ function productSearch()
 // It used to go here http://jjh400:8000/price-catalogs
 function priceSearch()
 {
-    $json_str = file_get_contents(PATH."getPriceList?d24user=".$_SESSION['username']."&d24sesid=".$_SESSION['sesid']."&d24_acctid=".$_SESSION['acctid']);
+    $json_str = file_get_contents(HC_PATH."getPriceList?d24user=".$_SESSION['username']."&d24sesid=".$_SESSION['sesid']."&d24_acctid=".$_SESSION['acctid']);
     $prices = json_decode($json_str, true);
     $best_prices = $prices['best_price'];
     printBestPrices($best_prices);
@@ -342,23 +344,28 @@ function mill_claim_search()
     $result = $conn->query($query); // This is does not work in the conditional. ???
     
     // Conditional to check query and if the user entered search data
-    if(isset($result) && $result->num_rows && (isset($conditions['Claim Number']) || 
-       isset($conditions['Claim Status']) || isset($conditions['Manufacturer Name']) ||
-       isset($conditions['Consumer Name'])))
+    if((isset($conditions['Claim Number']) || isset($conditions['Claim Status']) || 
+       isset($conditions['Manufacturer Name']) || isset($conditions['Consumer Name'])) &&
+       $result->num_rows)
     {
         printMillClaim($result);
     }//End of if for conditional to check query and if the user entered search data
       
     //This else is for debugging
-    /*else 
+    else 
     {
         $query = "SELECT * FROM Mill_Claims WHERE `Account Executive Last Name` = \"Carter\"";
         $result = $conn->query($query);
         printMillClaim($result);
-    }*/
+    }
     
     
-    $conditions = array(); //Unsetting the elements of the condtions array.
+    //Unsetting the elements of the condtions array.
+    foreach($conditions as $condition)
+    {
+        unset($condition);
+    }
+    $conditions = array();
     close_db($conn); // Closing Mill Claim DB connection
 }//End of function mill_claim_search()
 //END OF SEARCHING FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////
@@ -378,7 +385,7 @@ function portal_login()
         unset($_POST['username']);
         unset($_POST['password']);
         $conn->close();
-        header(REDIRECT); /* Redirect browser */
+        header(HC_REDIRECT); /* Redirect browser */
         exit();
     } 
     
@@ -391,7 +398,7 @@ function portal_login()
         unset($_POST['username']);
         unset($_POST['password']);
         $conn->close();
-        header(REDIRECT); /* Redirect browser */
+        header(HC_REDIRECT); /* Redirect browser */
         exit();
     }
     
@@ -404,7 +411,7 @@ function portal_login()
     $_SESSION['password'] = $_POST['password'];
     
     //Making Login Web Service Call to Dancik and decoding the JSON
-    $json_str = file_get_contents(PATH."/login/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$_SESSION['dancik_pass']);
+    $json_str = file_get_contents(HC_PATH."/login/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$_SESSION['dancik_pass']);
     $hold = json_decode($json_str, true);
     
     if(isset($hold['errors'])) // If JSON returned is an error message conditional
@@ -414,7 +421,7 @@ function portal_login()
         unset($_POST['password']);
         $conn->close();
         //Location will need to be changed when code is pushed.
-        header(REDIRECT); /* Redirect browser */
+        header(HC_REDIRECT); /* Redirect browser */
         exit();
     }//End of if(isset($hold['errors']))
     
@@ -425,7 +432,7 @@ function portal_login()
         unset($_SESSION['dancik_pass']);
         
         //Dancik Call to get account ID and store in the session
-        $json_str = file_get_contents(PATH."/getAccountInfo?d24user=".$_SESSION['username']."&d24sesid=".$_SESSION['sesid']);
+        $json_str = file_get_contents(HC_PATH."/getAccountInfo?d24user=".$_SESSION['username']."&d24sesid=".$_SESSION['sesid']);
         $hold = json_decode($json_str, true);
         $accountInfo = $hold['acct'];
         $_SESSION['acctid'] = $accountInfo['accountid'];
@@ -468,7 +475,7 @@ function check_login()
             !isset($_SESSION['dancik_user']) || !isset($_SESSION['role']))
     {
         //Location will need to be changed when code is pushed.
-        header(REDIRECT); /* Redirect browser */
+        header(HC_REDIRECT); /* Redirect browser */
         exit();
     }
 }//End of function check_post()
@@ -477,7 +484,7 @@ function check_login()
 function connect_db()
 {
     // Create connection
-    $conn = new mysqli(HOST, $_SESSION['username'], $_SESSION['password'], DATABASE);
+    $conn = new mysqli(HC_HOST, $_SESSION['username'], $_SESSION['password'], HC_DATABASE);
     
     // Check connection for error
     if ($conn->connect_error) {
@@ -489,7 +496,7 @@ function connect_db()
 }//End of function connect_db()
 
 //Database Close function
-function close_db($conn = null)
+function close_db($conn)
 {
     //If there is a connecion to he database, close it.
     if(!is_null($conn)) mysqli_close($conn);
