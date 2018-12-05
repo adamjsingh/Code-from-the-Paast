@@ -323,7 +323,7 @@ function mill_claim_search()
     
     //Creating query to get Mill Claims.  This is searching for AE Carter now
     //The query condition for AE Carter will need to be replaced for the condition of the user.
-    $query = "SELECT * FROM Mill_Claims WHERE `Account Executive Last Name` = \"Carter\"";
+    $query = "SELECT * FROM jjhc_MillClaims WHERE `Account Executive Last Name` = \"Carter\"";
     
     //if($_SESSION['role'] == 2) $query .= " `Account Executive Last Name` = \"Carter\"";
     //$first = true;
@@ -354,7 +354,7 @@ function mill_claim_search()
     //This else is for debugging
     else 
     {
-        $query = "SELECT * FROM Mill_Claims WHERE `Account Executive Last Name` = \"Carter\"";
+        $query = "SELECT * FROM jjhc_MillClaims WHERE `Account Executive Last Name` = \"Carter\"";
         $result = $conn->query($query);
         printMillClaim($result);
     }
@@ -376,7 +376,8 @@ function mill_claim_search()
 function portal_login()
 {
     // Create connection
-    $conn = new mysqli(HOST, $_POST['username'], $_POST['password'], DATABASE);
+    //$conn = new mysqli(HOST, $_POST['username'], $_POST['password'], DATABASE);
+    $conn = new mysqli(HOST, DB_USER, DB_PASSWORD, DATABASE);
     
     // Check connection for errors
     //If so, clear the POST, close the connection and redirect to the user to the login page
@@ -390,7 +391,7 @@ function portal_login()
     } 
     
     //Create query to retrieve Dancik Creendtials
-    $query = "SELECT DancikUsername, DancikPassword, RoleID FROM User WHERE Username = \"".$_POST['username']."\" AND Password = \"".$_POST['password']."\"";
+    $query = "SELECT DancikUsername, DancikPassword, RoleID FROM jjhc_Users WHERE Username = \"".$_POST['username']."\" AND Password = \"".$_POST['password']."\"";
     
     //If the query fails, clear the POST, close the connection and redirect to the user to the login page
     if(!$result = $conn->query($query))
