@@ -22,13 +22,22 @@
  * This is to ensure the session variables will not be unset when going from page to page.
  */
 
-//MySQL Sever, MySQL Database, Path for Web Service Calls and Login Redirect
-define('HC_HOST', "wordpressstackbuild005-rds-zqc3a8-databasecluster-8d6sph6bk7ti.cluster-cxuflrtukmtq.us-east-1.rds.amazonaws.com");
-//define('HC_HOST', 'localhost');
+//MySQL Sever, MySQL Database, MySQL Tables, Path for Web Service Calls and Login Redirect
 define('HC_DATABASE', 'HainesConnect');
 define('HC_PATH', 'http://jjh400.jjhaines.com/danciko/dancik-ows/d24/');
-//define('HC_REDIRECT', "Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login");
-define('HC_REDIRECT', "Location:  https://jjhaines.net/test-login/");
+define('MILL_CLAIMS_TABLE', "jjhc_MillClaims");
+define('HC_USERS', "jjhc_Users");
+
+
+// Switch which lines are commented when going from localhost to jjhaines.net
+
+// For localhost
+define('HC_REDIRECT', "Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login");
+define('HC_HOST', 'localhost');
+
+// For jjhaines.net
+//define('HC_REDIRECT', "Location:  https://jjhaines.net/test-login/");
+//define('HC_HOST', "wordpressstackbuild005-rds-zqc3a8-databasecluster-8d6sph6bk7ti.cluster-cxuflrtukmtq.us-east-1.rds.amazonaws.com");
 
 //Extract Session ID's from the JSON
 function extractSessionID($json)
@@ -142,6 +151,7 @@ function printItems($items)
 //Print Best Prices
 function printBestPrices($best_prices)
 {
+    //Creating Table Head
     $table = "<div class=\"table-1\">";
     $table .= "<table width=\"100%\">";
     $table .= "<thead>";
@@ -164,6 +174,7 @@ function printBestPrices($best_prices)
         $table .= "</tr>";
     }//End of foreach($items as $item)
     
+    //Finishing Table
     $table .= "</tbody>";
     $table .= "</table>";
     $table .= "</div>";
@@ -191,6 +202,8 @@ function printAccount($accountInfo)
     $table .= "<th align=\"left\">Fax</th>";
     $table .= "</tr>";
     $table .= "</thead>";
+    
+    //Creating table body
     $table .= "<tbody>";
     $table .= "<tr>";
     $table .= "<td align=\"left\">{$accountInfo['userid']}</td>";
@@ -204,6 +217,8 @@ function printAccount($accountInfo)
     $table .= "<td align=\"left\">{$accountInfo['phone']}</td>";
     $table .= "<td align=\"left\">{$accountInfo['fax']}</td>";
     $table .= "</tr>";
+    
+    //Finishing table
     $table .= "</tbody>";
     $table .= "</table>";
     $table .= "</div><br><br>";
@@ -286,21 +301,23 @@ function mill_claim_search()
     $conn = connect_db();
     if(!isset($conn) || is_null($conn)) die("No Connection.");
     
-    //Creating query
+    //Creating query conditions array
     $conditions = array();
     
     //Checking to see if the user entered information on Claim Number
     //Stored in the conditions and clears the POST
     if(isset($_POST['claim_number']))
     {
+       //echo $_POST['claim_number'];
        $conditions['Claim Number'] = $_POST['claim_number'];
        unset($_POST['claim_number']);
     }
     
-    //Checking to see if the user entered information on Status
+    //Checking to see if the user entered information on Claim Status
     //Stored in the conditions and clears the POST
     if(isset($_POST['claim_status']))
     {
+       //echo $_POST['claim_status'];
        $conditions['Claim Status'] = $_POST['claim_status'];
        unset($_POST['claim_status']);
     }
@@ -309,6 +326,7 @@ function mill_claim_search()
     //Stored in the conditions and clears the POST
     if(isset($_POST['manufacturer']))
     {
+       //echo $_POST['manufacturer'];
        $conditions['Manufacturer Name'] = $_POST['manufacturer'];
        unset($_POST['manufacturer']);
     }
@@ -317,13 +335,14 @@ function mill_claim_search()
     //Stored in the conditions and clears the POST
     if(isset($_POST['consumer']))
     {
+       //echo $_POST['consumer'];
        $conditions['Consumer Name'] = $_POST['consumer'];
        unset($_POST['consumer']);
     }
     
     //Creating query to get Mill Claims.  This is searching for AE Carter now
     //The query condition for AE Carter will need to be replaced for the condition of the user.
-    $query = "SELECT * FROM jjhc_MillClaims WHERE `Account Executive Last Name` = \"Carter\"";
+    $query = "SELECT * FROM ".MILL_CLAIMS_TABLE." WHERE `Account Executive Last Name` = \"Carter\"";
     
     //if($_SESSION['role'] == 2) $query .= " `Account Executive Last Name` = \"Carter\"";
     //$first = true;
@@ -341,12 +360,14 @@ function mill_claim_search()
        }
     }
        
-    $result = $conn->query($query); // This is does not work in the conditional. ???
+    //Retrieving query results
+    // This is does not work in the conditional. ???
+    $result = $conn->query($query);
+    printMillClaim($result); //Printing query results table
     
     // Conditional to check query and if the user entered search data
-    if((isset($conditions['Claim Number']) || isset($conditions['Claim Status']) || 
-       isset($conditions['Manufacturer Name']) || isset($conditions['Consumer Name'])) &&
-       $result->num_rows)
+    /*if((isset($conditions['Claim Number']) || isset($conditions['Claim Status']) || 
+       isset($conditions['Manufacturer Name']) || isset($conditions['Consumer Name'])))
     {
         printMillClaim($result);
     }//End of if for conditional to check query and if the user entered search data
@@ -354,18 +375,15 @@ function mill_claim_search()
     //This else is for debugging
     else 
     {
-        $query = "SELECT * FROM jjhc_MillClaims WHERE `Account Executive Last Name` = \"Carter\"";
+        $query = "SELECT * FROM ".MILL_CLAIMS_TABLE." WHERE `Account Executive Last Name` = \"Carter\"";
         $result = $conn->query($query);
         printMillClaim($result);
-    }
+    }*/
     
     
     //Unsetting the elements of the condtions array.
-    foreach($conditions as $condition)
-    {
-        unset($condition);
-    }
-    $conditions = array();
+    //$conditions = array();
+    
     close_db($conn); // Closing Mill Claim DB connection
 }//End of function mill_claim_search()
 //END OF SEARCHING FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////
@@ -376,8 +394,9 @@ function mill_claim_search()
 function portal_login()
 {
     // Create connection
-    //$conn = new mysqli(HOST, $_POST['username'], $_POST['password'], DATABASE);
-    $conn = new mysqli(HOST, DB_USER, DB_PASSWORD, DATABASE);
+    // Switch which line is commented when going from localhost to jjhaines.net
+    $conn = new mysqli(HC_HOST, $_POST['username'], $_POST['password'], HC_DATABASE);
+    //$conn = new mysqli(HC_HOST, DB_USER, DB_PASSWORD, HC_DATABASE);
     
     // Check connection for errors
     //If so, clear the POST, close the connection and redirect to the user to the login page
@@ -391,7 +410,7 @@ function portal_login()
     } 
     
     //Create query to retrieve Dancik Creendtials
-    $query = "SELECT DancikUsername, DancikPassword, RoleID FROM jjhc_Users WHERE Username = \"".$_POST['username']."\" AND Password = \"".$_POST['password']."\"";
+    $query = "SELECT DancikUsername, DancikPassword, RoleID FROM ".HC_USERS." WHERE Username = \"".$_POST['username']."\" AND Password = \"".$_POST['password']."\"";
     
     //If the query fails, clear the POST, close the connection and redirect to the user to the login page
     if(!$result = $conn->query($query))
