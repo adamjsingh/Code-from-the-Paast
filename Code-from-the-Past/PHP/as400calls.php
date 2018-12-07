@@ -1,43 +1,35 @@
 <?php
 // CODE FOR WEB SERVICE CALLS AND DATABASE QUERIES
 // FILE CREATED BY BY ASINGH - 11/28/2018
+// EDITED FOR AD LOGIN BY ASINGH - 12/07/2018
 
-/* There are three other php  files that must have PHP code for this file to work
+/* There are three lines of code that need to be put into the haines-portal-100-width.php file
  * 
+ * The first two lines of code 
  * 
- * functions.php – This file is found in www/wp-content/themes/whatever_theme_we_are_using.  
- * The last line of the file should have the following line of code: include("whatever_path_you_choose/as400calls.php"); 
- * The path to as400calls.php should go to where it is stored.  
- * Also make sure there are no closing php tags at the end of functions.php.  
- * They may cause "Headers already sent" issues. 
+ * if(!isset($_SESSION)) session_start();
+ * include("as400calls.php");
  * 
- * Header.php – This file should be in the same directory as the functions.php file.  
- * At the beginning of the file include the following line of code: if(!isset($_SESSION)) session_start(); 
- * This is to ensure there is an active session for the php.  
- * This will be needed since the user’s credentials for Dancik and MySQL will be stored as session values.  
- * This is so the credentials can be used from page to page. 
+ * Should be within PHP tags after 
  * 
- * Footer.php - This file should be in the same directory as the functions.php file.  
- * At the end of the file include the followingline of code: <?php exit(); ?> 
- * This is to ensure the session variables will not be unset when going from page to page.
+ * if ( ! defined( 'ABSPATH' ) ) {exit( 'Direct script access denied.' );}
+ * 
+ * and before
+ * 
+ * <?php get_header(); ?>
+ * 
+ * The third line of code 
+ * 
+ * exit();
+ * 
+ * should be placed right before get_footer();
  */
 
 //MySQL Sever, MySQL Database, MySQL Tables, Path for Web Service Calls and Login Redirect
-define('LDAP_HOST', "ldap.jjhaines.com");
-define('HC_DATABASE', 'HainesConnect'); //This is only needed for localhost
-define('SOAP_URI', "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name ");
 define('HC_PATH', 'http://jjh400.jjhaines.com/danciko/dancik-ows/d24/');
 define('MILL_CLAIMS_TABLE', "jjhc_MillClaims");
 define('HC_USERS', "jjhc_Users");
-
-
-// Switch which lines are commented when going from localhost to jjhaines.net
-
-// For localhost
-//define('HC_REDIRECT', "Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login");
-
-// For jjhaines.net
-define('HC_REDIRECT', "Location:  https://jjhaines.net/test-login/");
+define('HC_REDIRECT', "Location:  https://jjhaines.net");
 
 //Extract Session ID's from the JSON
 function extractSessionID($json)
@@ -298,8 +290,7 @@ function priceSearch()
 function mill_claim_search()
 {
     // Create connection
-    $conn = connect_db();
-    if(!isset($conn) || is_null($conn)) die("No Connection.");
+    $conn = open_db();
     
     //Creating query conditions array
     $conditions = array();
@@ -361,9 +352,7 @@ function mill_claim_search()
     }
        
     //Retrieving query results
-    // This is does not work in the conditional. ???
-    $result = $conn->query($query);
-    printMillClaim($result); //Printing query results table
+    printMillClaim(run_query($conn, $query)); //Printing query results table
     
     // Conditional to check query and if the user entered search data
     /*if((isset($conditions['Claim Number']) || isset($conditions['Claim Status']) || 
@@ -389,46 +378,79 @@ function mill_claim_search()
 //END OF SEARCHING FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////
  
 //Credential Functions//////////////////////////////////////////////////////////////////////////////////////////////////////
-// These functions log the user in and out and chaeck user credentials when changing pages.
+// These functions need the user's credentials to operate
+
+//WP User Retrieval
+//Function Accesses the user through cookies
+function wp_user_retrieval()
+{
+    //For Loop for Cookies
+    foreach($_COOKIE as $key => $value)
+    {
+        //Check for the right key
+        if(preg_match("/^wordpress_logged_in/", $key))
+        {
+            $matches = array();
+            preg_match("/^[^\|]*/", $value, $matches);
+            return $matches[0];
+        }
+    }//End of foreach($_COOKIE as $key => $value)
+        
+    header(HC_REDIRECT); /* Redirect browser */
+    die("User is not logged into wordpress.");
+}//End of function wp_user_retrieval()
+
+//Database Connect function
+function open_db()
+{
+    $conn = new mysqli(DB_HOST,DB_USER, DB_PASSWORD, DB_NAME); // Create MySQL connection
+    
+    // Check connection for error
+    if($conn->connect_error)
+    {
+        header(HC_REDIRECT); /* Redirect browser */
+        die("Connection failed: " . $conn->connect_error);
+    }
+    
+    return $conn; //Return the connecton
+}//End of function connect_db()
+
+//Database Close function
+function close_db($conn)
+{
+    //If there is a connecion to he database, close it.
+    if(!is_null($conn)) mysqli_close($conn);
+}//End of function close_db($conn)
+
+//Run Query Function
+function run_query($conn, $query)
+{
+    //If the query fails, close the connection and redirect to the user to the login page
+    if(!$result = $conn->query($query))
+    {
+        $conn->close(); //Closing Database
+        header(HC_REDIRECT); /* Redirect browser */
+        die("Could not query");
+    }
+    
+    return $result;
+}//End of function run_query($conn, $query)
+
 //Login function
 function portal_login()
 {
-    // Create connection
-    // Switch Commented Lines when going from localhost to dev
-    $conn = new mysqli(DB_HOST,DB_USER, DB_PASSWORD, DB_NAME);  //This is for aws and TestBase localhost
-    //$conn = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, HC_DATABASE); //This is for localhost
+    $username = wp_user_retrieval(); //Retrieving wordpress user name
     
-    // Check connection for errors
-    //If so, clear the POST, close the connection and redirect to the user to the login page
-    if ($conn->connect_error) 
-    {
-        unset($_POST['username']);
-        unset($_POST['password']);
-        $conn->close();
-        header(HC_REDIRECT); /* Redirect browser */
-        die("DB Connection Error"); 
-    } 
-    
-    //Create query to retrieve Dancik Creendtials
-    $query = "SELECT `DancikUsername`, `DancikPassword`, `RoleID` FROM `".HC_USERS."` WHERE Username = \"".$_POST['username']."\" AND Password = \"".$_POST['password']."\"";
-    
-    //If the query fails, clear the POST, close the connection and redirect to the user to the login page
-    if(!$result = $conn->query($query))
-    {
-        unset($_POST['username']);
-        unset($_POST['password']);
-        $conn->close();
-        header(HC_REDIRECT); /* Redirect browser */
-        die("Could not query"); 
-    }
+    $conn = open_db(); // Create connection
+    $query = "SELECT * FROM `".HC_USERS."` WHERE `Username` = \"".$username."\""; //Create query to retrieve Dancik Creendtials
+    $result = run_query($conn, $query);
     
     //Retrieve results of sucessful Dancik Credentials query and store all retrieved credentials in the session
     $dancik = $result->fetch_assoc();
     $_SESSION['dancik_user'] = $dancik['DancikUsername'];
     $_SESSION['dancik_pass'] = $dancik['DancikPassword'];
     $_SESSION['role'] = $dancik['RoleID'];
-    $_SESSION['username'] = $_POST['username'];
-    $_SESSION['password'] = $_POST['password'];
+    $_SESSION['username'] = $username;
     
     //Making Login Web Service Call to Dancik and decoding the JSON
     $json_str = file_get_contents(HC_PATH."/login/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$_SESSION['dancik_pass']);
@@ -436,10 +458,7 @@ function portal_login()
     
     if(isset($hold['errors'])) // If JSON returned is an error message conditional
     {
-        //Go back to the login page and clear the post
-        unset($_POST['username']);
-        unset($_POST['password']);
-        $conn->close();
+        $conn->close(); //Closing Database
         //Location will need to be changed when code is pushed.
         header(HC_REDIRECT); /* Redirect browser */
         exit();
@@ -452,15 +471,12 @@ function portal_login()
         unset($_SESSION['dancik_pass']);
         
         //Dancik Call to get account ID and store in the session
-        $json_str = file_get_contents(HC_PATH."/getAccountInfo?d24user=".$_SESSION['username']."&d24sesid=".$_SESSION['sesid']);
+        $json_str = file_get_contents(HC_PATH."/getAccountInfo?d24user=".$_SESSION['dancik_user']."&d24sesid=".$_SESSION['sesid']);
         $hold = json_decode($json_str, true);
         $accountInfo = $hold['acct'];
         $_SESSION['acctid'] = $accountInfo['accountid'];
          
-        //Removing username and password from post after they have been stored in the session
-        unset($_POST['username']);
-        unset($_POST['password']);
-        $conn->close(); //Closing Database connection
+        close_db($conn); //Closing Database connection
     }//End of no error is returned conditional   
 }//End of function portal_login()
  
@@ -470,7 +486,6 @@ function portal_logout()
      // Function destroys the session, to log out user
      // Unsetting the session attributes that I created, session destroy does not unset them
      if(isset($_SESSION['username'])) unset($_SESSION['username']);
-     if(isset($_SESSION['password'])) unset($_SESSION['password']);
      if(isset($_SESSION['sesid'])) unset($_SESSION['sesid']);
      if(isset($_SESSION['acctid'])) unset($_SESSION['acctid']);
      if(isset($_SESSION['dancik_user'])) unset($_SESSION['dancik_user']);
@@ -478,91 +493,29 @@ function portal_logout()
      if(isset($_SESSION['role'])) unset($_SESSION['role']);
      
      $_SESSION = array();
-     
-     // If it's desired to kill the session, also delete the session cookie.
-     // Note: This will destroy the session, and not just the session data!
-     if (ini_get("session.use_cookies")) {
-         $params = session_get_cookie_params();
-         setcookie(session_name(), '', time() - 42000,
-             $params["path"], $params["domain"],
-             $params["secure"], $params["httponly"]
-             );
-     }
-     
      session_destroy();
      //header("Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login"); /* Redirect browser *
 }//End of function portal_logout()
-
-//Logged in checking function
-function check_login()
-{
-    //Condtional to see if someone entered an username and password
-    if(isset($_POST['username']) && isset($_POST['password'])) 
-    {
-        portal_login(); //Call login function
-    }
-    
-    //Redirect to login page if no one logged in
-    else if(!isset($_SESSION['username']) || !isset($_SESSION['password']) ||
-            !isset($_SESSION['sesid']) || !isset($_SESSION['acctid']) ||
-            !isset($_SESSION['dancik_user']) || !isset($_SESSION['role']))
-    {
-        //Location will need to be changed when code is pushed.
-        header(HC_REDIRECT); /* Redirect browser */
-        exit();
-    }
-}//End of function check_post()
-
-//SOAP Call Function
-//This function connects to the SOAP of Azure and tries to retrieve the users email
-/*function soap_connect()
-{
-    $client = new SoapClient(SOAP_URI);
-}*/
-
-
-//Database Connect function
-function connect_db()
-{
-    // Create connection
-    // Switch Commented Lines when going from localhost to dev
-    $conn = new mysqli(DB_HOST,DB_USER, DB_PASSWORD, DB_NAME);  //This is for aws and TestBase localhost
-    //$conn = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, HC_DATABASE); //This is for localhost
-    
-    // Check connection for error
-    if ($conn->connect_error) {
-        die("Connection failed: " . $conn->connect_error);
-    } 
-    
-    else //No error, return the connection
-        return $conn;
-}//End of function connect_db()
-
-//Database Close function
-function close_db($conn)
-{
-    //If there is a connecion to he database, close it.
-    if(!is_null($conn)) mysqli_close($conn);
-}//End of function close_db($conn)
  
- //Debugging function
+//End of Credential Functions//////////////////////////////////////////////////////////////////////////////////////////
+
+//Debugging functions /////////////////////////////////////////////////////////////////////////////////////////////////
+//These are printing functions so I know what are stored in the varials super globals
+//Debugging function
 function print_cookies()
 {
     foreach($_COOKIE as $key => $value)
     {
         echo $key." => ";
-         
-         if(is_array($value))
-             echo "array<br>";
-             
-         else
-             echo $value."<br>";
-     }
+        
+        if(is_array($value))
+            echo "array<br>";
+            
+        else
+            echo $value."<br>";
+    }
 }
-//End of Credential Functions//////////////////////////////////////////////////////////////////////////////////////////
 
-//Debugging functions /////////////////////////////////////////////////////////////////////////////////////////////////
-//These are printing functions so I know what are stored in the varials super globals
 function print_session()
 {
     if(isset($_SESSION))
