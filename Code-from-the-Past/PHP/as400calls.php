@@ -23,7 +23,9 @@
  */
 
 //MySQL Sever, MySQL Database, MySQL Tables, Path for Web Service Calls and Login Redirect
-define('HC_DATABASE', 'HainesConnect');
+define('LDAP_HOST', "ldap.jjhaines.com");
+define('HC_DATABASE', 'HainesConnect'); //This is only needed for localhost
+define('SOAP_URI', "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name ");
 define('HC_PATH', 'http://jjh400.jjhaines.com/danciko/dancik-ows/d24/');
 define('MILL_CLAIMS_TABLE', "jjhc_MillClaims");
 define('HC_USERS', "jjhc_Users");
@@ -32,12 +34,10 @@ define('HC_USERS', "jjhc_Users");
 // Switch which lines are commented when going from localhost to jjhaines.net
 
 // For localhost
-define('HC_REDIRECT', "Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login");
-define('HC_HOST', 'localhost');
+//define('HC_REDIRECT', "Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login");
 
 // For jjhaines.net
-//define('HC_REDIRECT', "Location:  https://jjhaines.net/test-login/");
-//define('HC_HOST', "wordpressstackbuild005-rds-zqc3a8-databasecluster-8d6sph6bk7ti.cluster-cxuflrtukmtq.us-east-1.rds.amazonaws.com");
+define('HC_REDIRECT', "Location:  https://jjhaines.net/test-login/");
 
 //Extract Session ID's from the JSON
 function extractSessionID($json)
@@ -134,7 +134,7 @@ function printItems($items)
         $table .= "<tr>";
         $table .= "<td align=\"left\">".$item['id_dsp']."</td>";
         $table .= "<td align=\"left\">".$item['color']."</td>";
-        $table .= "<td align=\"left\">".$item['patterndescription_dsp']."</td>";
+        $table .= "<td align=\"left\">". preg_replace("/reducer/i", 'EDUCER', $item['patterndescription_dsp'])."</td>";
         $table .= "<td align=\"left\">".$item['description1']." ".$item['description2']."</td>";
         $table .= "<td align=\"left\">".$item['available_inventory']."</td>";
         //$table .= "<td align=\"left\">".$item['insufficient_inventory_flag']."</td>";
@@ -342,7 +342,7 @@ function mill_claim_search()
     
     //Creating query to get Mill Claims.  This is searching for AE Carter now
     //The query condition for AE Carter will need to be replaced for the condition of the user.
-    $query = "SELECT * FROM ".MILL_CLAIMS_TABLE." WHERE `Account Executive Last Name` = \"Carter\"";
+    $query = "SELECT * FROM `".MILL_CLAIMS_TABLE."` WHERE `Account Executive Last Name` = \"Carter\"";
     
     //if($_SESSION['role'] == 2) $query .= " `Account Executive Last Name` = \"Carter\"";
     //$first = true;
@@ -394,9 +394,9 @@ function mill_claim_search()
 function portal_login()
 {
     // Create connection
-    // Switch which line is commented when going from localhost to jjhaines.net
-    $conn = new mysqli(HC_HOST, $_POST['username'], $_POST['password'], HC_DATABASE);
-    //$conn = new mysqli(HC_HOST, DB_USER, DB_PASSWORD, HC_DATABASE);
+    // Switch Commented Lines when going from localhost to dev
+    $conn = new mysqli(DB_HOST,DB_USER, DB_PASSWORD, DB_NAME);  //This is for aws and TestBase localhost
+    //$conn = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, HC_DATABASE); //This is for localhost
     
     // Check connection for errors
     //If so, clear the POST, close the connection and redirect to the user to the login page
@@ -406,11 +406,11 @@ function portal_login()
         unset($_POST['password']);
         $conn->close();
         header(HC_REDIRECT); /* Redirect browser */
-        exit();
+        die("DB Connection Error"); 
     } 
     
     //Create query to retrieve Dancik Creendtials
-    $query = "SELECT DancikUsername, DancikPassword, RoleID FROM ".HC_USERS." WHERE Username = \"".$_POST['username']."\" AND Password = \"".$_POST['password']."\"";
+    $query = "SELECT `DancikUsername`, `DancikPassword`, `RoleID` FROM `".HC_USERS."` WHERE Username = \"".$_POST['username']."\" AND Password = \"".$_POST['password']."\"";
     
     //If the query fails, clear the POST, close the connection and redirect to the user to the login page
     if(!$result = $conn->query($query))
@@ -419,7 +419,7 @@ function portal_login()
         unset($_POST['password']);
         $conn->close();
         header(HC_REDIRECT); /* Redirect browser */
-        exit();
+        die("Could not query"); 
     }
     
     //Retrieve results of sucessful Dancik Credentials query and store all retrieved credentials in the session
@@ -476,6 +476,19 @@ function portal_logout()
      if(isset($_SESSION['dancik_user'])) unset($_SESSION['dancik_user']);
      if(isset($_SESSION['dancik_pass'])) unset($_SESSION['dancik_pass']);
      if(isset($_SESSION['role'])) unset($_SESSION['role']);
+     
+     $_SESSION = array();
+     
+     // If it's desired to kill the session, also delete the session cookie.
+     // Note: This will destroy the session, and not just the session data!
+     if (ini_get("session.use_cookies")) {
+         $params = session_get_cookie_params();
+         setcookie(session_name(), '', time() - 42000,
+             $params["path"], $params["domain"],
+             $params["secure"], $params["httponly"]
+             );
+     }
+     
      session_destroy();
      //header("Location:  https://localhost/jjhaines-net/JJH-GLB-IT-Dev_AWS-NVA-CC_LAMP-WPv040900_Rep-0001_www-JJHaines-com/test-login"); /* Redirect browser *
 }//End of function portal_logout()
@@ -500,11 +513,21 @@ function check_login()
     }
 }//End of function check_post()
 
+//SOAP Call Function
+//This function connects to the SOAP of Azure and tries to retrieve the users email
+/*function soap_connect()
+{
+    $client = new SoapClient(SOAP_URI);
+}*/
+
+
 //Database Connect function
 function connect_db()
 {
     // Create connection
-    $conn = new mysqli(HC_HOST, $_SESSION['username'], $_SESSION['password'], HC_DATABASE);
+    // Switch Commented Lines when going from localhost to dev
+    $conn = new mysqli(DB_HOST,DB_USER, DB_PASSWORD, DB_NAME);  //This is for aws and TestBase localhost
+    //$conn = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, HC_DATABASE); //This is for localhost
     
     // Check connection for error
     if ($conn->connect_error) {
@@ -521,7 +544,6 @@ function close_db($conn)
     //If there is a connecion to he database, close it.
     if(!is_null($conn)) mysqli_close($conn);
 }//End of function close_db($conn)
-
  
  //Debugging function
 function print_cookies()
@@ -537,20 +559,131 @@ function print_cookies()
              echo $value."<br>";
      }
 }
- 
-//Debugging function
+//End of Credential Functions//////////////////////////////////////////////////////////////////////////////////////////
+
+//Debugging functions /////////////////////////////////////////////////////////////////////////////////////////////////
+//These are printing functions so I know what are stored in the varials super globals
 function print_session()
 {
-    foreach($_SESSION as $key => $value)
+    if(isset($_SESSION))
+    {
+        foreach($_SESSION as $key => $value)
+        {
+            echo $key." => ";
+            
+            if(is_array($value))
+                print_array($value);
+            
+            else
+                echo $value."<br>";
+        }
+    }
+    
+    else
+    {
+        echo "Session is not set.";
+    }
+}
+
+function print_request()
+{
+    foreach($_REQUEST as $key => $value)
     {
         echo $key." => ";
-         
+        
         if(is_array($value))
-            echo "array<br>";
-         
+            print_array($value);
+            
         else
+           echo $value."<br>";
+    }  
+}
+
+function print_get()
+{
+    foreach($_GET as $key => $value)
+    {
+        echo $key." => ";
+        
+        if(is_array($value))
+            print_array($value);
+            
+       else
             echo $value."<br>";
     }
 }
+
+function print_post()
+{
+    foreach($_POST as $key => $value)
+    {
+        echo $key." => ";
+        
+        if(is_array($value))
+            print_array($value);
+            
+        else
+           echo $value."<br>";
+    }
+}
+
+function print_server()
+{
+    foreach($_SERVER as $key => $value)
+    {
+        echo $key." => ";
+        
+        if(is_array($value))
+            print_array($value);
+            
+            else
+                echo $value."<br>";
+    }
+}
+
+function print_env()
+{
+    foreach($_ENV as $key => $value)
+    {
+        echo $key." => ";
+        
+        if(is_array($value))
+            print_array($value);
+            
+            else
+                echo $value."<br>";
+    }
+}
+
+function print_files()
+{
+    foreach($_FILES as $key => $value)
+    {
+        echo $key." => ";
+        
+        if(is_array($value))
+            print_array($value);
+            
+            else
+                echo $value."<br>";
+    }
+}
+
+function print_array($array)
+{
+    if(isset($array) && is_array($array))
+    {
+        foreach($array as $key => $value)
+        {
+            echo $key." => ";
+            
+            if(is_array($value))
+                print_array($value);
+                
+            else
+                echo $value."<br>";
+        }
+    }
+}
  // END OF CODE FOR WEB SERVICE CALLS
- ?>
+?>
