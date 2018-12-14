@@ -179,16 +179,16 @@ public class Room
             west = null;
         }
         
-        if(north != null)
+        if(above != null)
         {
-            north.south = null;
-            north = null;
+            above.below = null;
+            above = null;
         }
         
-        if(south != null)
+        if(below != null)
         {
-            south.north = null;
-            south = null;
+            below.above = null;
+            below = null;
         }
     }
 }
