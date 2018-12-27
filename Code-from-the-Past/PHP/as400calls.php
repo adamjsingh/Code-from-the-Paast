@@ -30,6 +30,7 @@
 //Path for Web Service Calls, Data Table Names and Login Redirect
 define('HC_PATH', 'http://jjh400.jjhaines.com/danciko/dancik-ows/d24/');
 define('SP_PATH', "http://jjh400.jjhaines.com/danciko/dancik-sws/");
+define('SP_CALL', "http://jjh400.jjhaines.com/danciko/dancik-sws/rest/sales-portal/");
 define('MILL_CLAIMS_TABLE', "jjhc_MillClaims");
 define('HC_USERS', "jjhc_Users");
 define('HC_REDIRECT', "Location:  https://jjhaines.net");
@@ -233,13 +234,19 @@ function portal_login()
    }//End of if(!isset($_SESSION['username']) || $_SESSION['username'] != $username)
    */
    
-   $_SESSION['username'] = "portalae"; //Temporary until user table is setup
+   //Temporary until user table is setup
+   $_SESSION['username'] = "portalae"; 
+   $_SESSION['sales_user'] = "asingh";
+   //$_SESSION['customer_pagination'] = 1;
+   $sales_password = "asingh";
+   
    //$_SESSION['username'] = wp_user_retrieval();
    
    $conn = open_db(); // Create connection
    //Create query to retrieve Dancik Creendtials
    // Commneted out until ready 
-   //$query = "SELECT `DancikUsername`, `DancikPassword`, `Sales_User`, `Sales_Password`, `RoleID` FROM `".HC_USERS."` WHERE UPPER(`Username`) = \"".strtoupper($_SESSION['username'])."\"";
+   //$query = "SELECT `DancikUsername`, AES_DECRYPT(`DancikPassword`, ".$some_key."), `Sales_User`, AES_DECRYPT(`Sales_Password`, ".$some_key."),"
+   //$query .= " `RoleID` FROM `".HC_USERS."` WHERE UPPER(`Username`) = \"".strtoupper($_SESSION['username'])."\"";
    $query = "SELECT `DancikUsername`, `DancikPassword`, `RoleID` FROM `".HC_USERS."` WHERE UPPER(`Username`) = \"".strtoupper($_SESSION['username'])."\""; 
    $result = run_query($conn, $query);
     
@@ -270,12 +277,10 @@ function portal_login()
        $_SESSION['acctid'] = $accountInfo['accountid'];
    }//End of no error is returned conditional   
  
-   //Comment out until ready
-   /*
    //Making Login Web Service Call to Sales Portal, decoding the JSON and removing password
-   $json_str = file_get_contents(SP_PATH."signon?user=".$_SESSION['sales_user']."&pwd=".$dancik['Sales_Password']);
+   $json_str = file_get_contents(SP_PATH."signon?user=".$_SESSION['sales_user']."&pwd=".$sales_password);
    $hold = json_decode($json_str, true);
-   unset($dancik['Sales_Password']);
+   //unset($dancik['Sales_Password']);
    
    if(isset($hold['errors'])) // If JSON returned is an error message conditional
    {
@@ -287,7 +292,6 @@ function portal_login()
        //Extracting Sales Portal Session
        $_SESSION['sales_session'] = extractSessionID($hold);
    }//End of no error is returned conditional 
-   */
 }//End of function portal_login()
  
  //Logout Function
@@ -295,7 +299,7 @@ function portal_logout()
 {
     // Iteration counters to stop loops so not to hang page.
     $d24_count = 0;
-    //Comment out until ready $sp_count = 0;
+    $sp_count = 0;
     
     // Loging off of D24 and Sales Portal loops.
     // These are loops so that if there is a failure, it will try to logoff again.
@@ -308,8 +312,6 @@ function portal_logout()
         $d24_count++;
     }while(!isset($d24['success']) || $d24_count < 5); //Keep trying to logoff until successful
     
-    //Comment out until ready
-    /*
     do
     {
         $json_str = file_get_contents(SP_PATH."signoff?dancik-session-user=".$_SESSION['dancik_user']."&dancik-sessionid=".$_SESSION['sales_session']);
@@ -317,13 +319,11 @@ function portal_logout()
         $sp_count++;
     }while(!isset($sp['success']) || $sp_count < 5); //Keep trying to logoff until successful
     //End of D24 and Sales Portal loops
-    */
     
     //Logoff failure notifications
     //There is no call to die because death calls portal_logout and die.
     if(!isset($d24['success'])) echo "Failure to logoff D24 Web Service Calls.  Contact JJ Haines IT support.<br>";
-    //Comment out until ready
-    //if(!isset($sp['success'])) echo "Failure to logoff Sales Portal Web Service Calls.  Contact JJ Haines IT support.<br>";
+    if(!isset($sp['success'])) echo "Failure to logoff Sales Portal Web Service Calls.  Contact JJ Haines IT support.<br>";
     
     // Function destroys the session, to log out user
     // Unsetting the session attributes that I created, session destroy does not unset them
@@ -332,9 +332,9 @@ function portal_logout()
     if(isset($_SESSION['acctid'])) unset($_SESSION['acctid']);
     if(isset($_SESSION['dancik_user'])) unset($_SESSION['dancik_user']);
     if(isset($_SESSION['role'])) unset($_SESSION['role']);
-    //Comment out until ready
-    //if(isset($_SESSION['sales_user'])) unset($_SESSION['sales_user']);
-    //if(isset($_SESSION['sales_session'])) unset($_SESSION['sales_session']);
+    if(isset($_SESSION['sales_user'])) unset($_SESSION['sales_user']);
+    if(isset($_SESSION['sales_session'])) unset($_SESSION['sales_session']);
+    //if(isset($_SESSION['customer_pagination'])) unset($_SESSION['customer_pagination']);
     
     $_SESSION = array();
     session_destroy();
@@ -371,22 +371,6 @@ function orders_inventory()
     header("Location:  http://jjh400.jjhaines.com/danciko/d24/main/".get_credentials(), false);
 }// End of function orders_inventory()
 
-// Sales Portal Function
-function sales_portal()
-{
-    /*
-    $cookie_jar = array(
-        "sales-login" => "%7B%22user%22%3A%22asingh%22%2C%22pwd%22%3A%22asingh%22%7D",
-        "JSESSIONID" => "C5C19175E8CE3603ADACA38B813E9464",
-        "NAVIGATORSID" => "0000Ke5ncSjkV6YHgOuFL8JI_En:3d55f87a-feca-4a95-bd5e-259296123e5b",       
-    );
-    $sales_login = "%7B%22user%22%3A%22asingh%22%2C%22pwd%22%3A%22asingh%22%7D";
-    setcookie("sales-login", $sales_login, 0, "/", "jjh400.jjhaines.com", true);
-    $_POST['user'] = "asingh";
-    $_POST['pwd'] = "asingh";
-    */
-    header("Locaion:  http://jjh400.jjhaines.com/danciko/sales/app-sales/index.jsp#show_dashboard");
-}
 //END OF TESTING FOR EXTERNAL LINKS WITH DANCIK CREDENTIALS/////////////////////////////////////////////////////////////////////
 
 //SEARCHING FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -395,10 +379,10 @@ function sales_portal()
 //Product Search Function
 function productSearch()
 {
-    $json_str = file_get_contents(HC_PATH."getItemsForAccount".get_credentials());
-    $products = json_decode($json_str, true);
-    if(isset($products['errors'])) death("Service call returned an error."); //If the service call is bad, call death.
-    printItems($products['items']);
+   $json_str = file_get_contents(HC_PATH."getItemsForAccount".get_credentials());
+   $products = json_decode($json_str, true);
+   if(isset($products['errors'])) death("Service call returned an error."); //If the service call is bad, call death.
+   printItems($products['items']);
 }//End of productSearch()
 
 //Price Search Function
@@ -501,6 +485,75 @@ function mill_claim_search()
     
     close_db($conn); // Closing Mill Claim DB connection
 }//End of function mill_claim_search()
+
+// Sales Portal Function
+function sales_portal()
+{
+    //Creating search form
+    $form = "<form action=\"\" method=\"post\">Search Term:<input name=\"keyword\" type=\"text\" />";
+    $form .= "<input name=\"start\" type=\"hidden\" value=\"1\" />";
+    $form .= "<input class=\"fusion-button button-flat fusion-button-square button-large button-default button-1\"";
+    $form .= " type=\"submit\" value=\"Search\" /></form><br><br>";
+    echo $form;
+    
+    //Conditional to check to see if a key word was entered
+    if(isset($_POST['keyword']) && trim($_POST['keyword']) != "")
+    {
+        //Making webservice calls
+        $call = SP_CALL."getCustomers".get_sales_credentials()."&keyword=".$_POST['keyword']."&startingRecord=".$_POST['start'];
+        $json_str = file_get_contents($call);
+        $hold = json_decode($json_str, true);
+        $records = $hold['records'];
+        $query_size = $hold['info']['querysize'];
+        printCustomers($records, $query_size, $_POST['keyword']);  //Printing results
+    }//End of if(isset($_POST['keyword']))
+}//End of function sales_portal()
+
+//Sales Portal Items Search
+function itemsSearch()
+{
+    //Creating search form
+    $form = "<form action=\"\" method=\"post\">Search Term:<input name=\"keyword\" type=\"text\" />";
+    $form .= "<input name=\"start\" type=\"hidden\" value=\"1\" />";
+    $form .= "<input class=\"fusion-button button-flat fusion-button-square button-large button-default button-1\"";
+    $form .= " type=\"submit\" value=\"Search\" /></form><br><br>";
+    echo $form;
+    
+    //Making REST API and printing results
+    $call = SP_CALL."getItems".get_sales_credentials()."&startingRecord=";
+    
+    //Conditional to see if start is set in post, for initial load of the page
+    if(isset($_POST['start']))
+    {
+        $call .= $_POST['start'];
+    }//End of if(isset($_POST['start']))
+    
+    //Conditional to see if start is not set in POST, for initial load of the page
+    else
+    {
+        $call .= "1";
+    }//End of else
+    
+    if(isset($_POST['keyword'])) $call .= "&keyword=".$_POST['keyword'];
+    $json_str = file_get_contents($call);
+    $hold = json_decode($json_str, true);
+    $records = $hold['records'];
+    $query_size = $hold['info']['querysize'];
+    
+    //Conditional to see if keyword is set in POST, for initial load of the page
+    if(isset($_POST['keyword']))
+    {
+        $keyword = $_POST['keyword'];
+    }//End of if(isset($_POST['keyword']))
+        
+    //Conditional to see if keyword is not set in POST, for initial load of the page
+    else
+    {
+        $keyword = "";
+    }//End of else
+        
+    printSalesItems($records, $query_size, $keyword);
+}//End of itemsSearch()
 //END OF SEARCHING FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////
 
 //PRINTING FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -709,6 +762,141 @@ function printMillClaim($result)
     
     echo $table; //Printing table
 }//End of Print Mill Claim
+
+//Print Customers
+function printCustomers($customers, $size, $keyword)
+{
+    //Creating a new table
+    $table = "<div class=\"table-1\">";
+    $table .= "<table width=\"100%\">";
+    $table .= "<tbody>";
+    
+    //For Loop for each customer
+    foreach($customers as $customer)
+    {
+        $table .= "<tr>"; //Starting a row
+        $table .= "<td>";
+        
+        //Customer Information displayed in a one-cell row
+        $table .= "<strong>";
+        $table .= $customer['name']." (".$customer['acct'].")";
+        $table .= "</strong><br>";
+        $table .= $customer['addr1']."<br>";
+        if(trim($customer['addr2']) != "") $table .= $customer['addr2']."<br>";
+        $table .= $customer['city'].", ".$customer['state']." ".$customer['zip']."<br>";
+        $table .= $customer['phone']."<br>";
+        
+        $table .= "</td>";
+        $table .= "</tr>"; //Ending the row
+    }//End of foreach($customers as $customer)
+    
+    //Finishing table
+    $table .= "</tbody>";
+    $table .= "</table>";
+    $table .= "</div><br><br>";
+    
+    echo $table;
+    
+    echo "<div style=\"display:flex;\">";
+    
+    if($_POST['start'] > 1)
+    {
+        $prev = "<form method=\"post\" align=\"left\">";
+        $prev .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
+        $prev .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] - 25)."\" />";
+        $prev .= "<input type=\"submit\" class=\"";
+        $prev .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
+        $prev .= "name=\"prev\" id=\"prev\" value=\"Previous 25\" /></form>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
+        echo $prev;
+    }
+    
+    if($_POST['start'] < $size - 25)
+    {
+        $next = "<form method=\"post\" align=\"right\">";
+        $next .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
+        $next .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] + 25)."\" />";
+        $next .= "<input type=\"submit\" class=\"";
+        $next .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
+        $next .= "name=\"next\" id=\"next\" value=\"Next 25\" /></form>";
+        echo $next;
+    }
+    
+    echo "</div><br><br>";
+}//End of function printCustomers($customers, $size, $keyword)
+
+//Print Sales Items
+function printSalesItems($items, $size, $keyword)
+{
+    //Creating a new table
+    $table = "<div class=\"table-1\">";
+    $table .= "<table width=\"100%\">";
+    $table .= "<tbody>";
+    
+    //For Loop for each customer
+    foreach($items as $item)
+    {        
+        //Customer Information displayed in a one-cell row
+        $table .= "<tr>"; //Starting a row
+        $table .= "<td style=\"border-right-style:none; text-align:left;\">";
+        $table .= "<strong>".$item['item']."</strong><br>";
+        $table .= $item['desc1']."<br>";
+        $table .= $item['desc2']."<br>";
+        if(strcasecmp($item['discontinued'], "Y") == 0)
+        {
+            $table .= "<div style=\"font-weight:bold; color:#c90000;\">Discontinued</div>";
+        }
+        $table .= "</td>";
+        
+        $table .= "<td style=\"border-left-style:none; text-align:right; vertical-align:top;\">";
+        $table .= $item['inv']."&nbsp;&nbsp".$item['uom']."<br>";
+        $table .= preg_replace("/\d$/", "", $item['price1'])."&nbsp;&nbsp".$item['uom']."<br>";
+        $table .= "</td>";
+        $table .= "</tr>"; //Ending the row
+    }//End of foreach($customers as $customer)
+    
+    //Finishing table
+    $table .= "</tbody>";
+    $table .= "</table>";
+    $table .= "</div><br><br>";
+    
+    echo $table;
+    
+    echo "<div style=\"display:flex;\">";
+    
+    if(isset($_POST['start']) && $_POST['start'] > 1)
+    {
+        $prev = "<form method=\"post\" align=\"left\">";
+        $prev .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
+        $prev .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] - 25)."\" />";
+        $prev .= "<input type=\"submit\" class=\"";
+        $prev .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
+        $prev .= "name=\"prev\" id=\"prev\" value=\"Previous 25\" /></form>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
+        echo $prev;
+    }
+    
+    if(!isset($_POST['start']) || $_POST['start'] < $size - 25)
+    {
+        if(!isset($_POST['start']))
+        {
+            $start = 1;
+        }
+        
+        else
+        {
+            $start = $_POST['start'];
+        }
+        
+        $next = "<form method=\"post\" align=\"right\">";
+        $next .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
+        $next .= "<input name=\"start\" type=\"hidden\" value=\"".($start + 25)."\" />";
+        $next .= "<input type=\"submit\" class=\"";
+        $next .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
+        $next .= "name=\"next\" id=\"next\" value=\"Next 25\" /></form>";
+        echo $next;
+    }
+    
+    echo "</div><br><br>";
+}//End of function printCustomers($customers, $size, $keyword)
 //END OF PRINTING FUNCTIONS//////////////////////////////////////////////////////////////////////////////////////////////////
 // END OF CODE FOR WEB SERVICE CALLS
 ?>
