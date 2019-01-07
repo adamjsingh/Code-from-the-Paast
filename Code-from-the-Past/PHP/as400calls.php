@@ -36,8 +36,8 @@ define('HC_USERS', "jjhc_Users");
 define('HC_REDIRECT', "Location:  https://jjhaines.net");
 define('AD_SERVER', "ldap://bal-dc02.jjhaines.com");
 
-//Credential Functions//////////////////////////////////////////////////////////////////////////////////////////////////////
-// These functions use or change the user's credentials in the session.
+//START OF UTILIY FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////////
+//These functions are helper functions used to retrieve and calculate data, and any other things.
 
 //WP User Retrieval
 //Function accesses the username from the cookies
@@ -57,6 +57,50 @@ function wp_user_retrieval()
         
    death("User is not logged into wordpress.");
 }//End of function wp_user_retrieval()
+
+//Percentage Function
+//Caluclate percentage for progress
+function percentage($amount, $max)
+{
+    if($max == 0)
+    {
+        return 0;
+    }
+    
+    else
+    {
+        return ($amount/$max)*100;
+    }
+}//End of function percentage($amount, $max)
+
+//Extract Session ID's from the JSON
+function extractSessionID($json)
+{
+    if(is_array($json)) //Is the paramater an array?
+    {
+        //for loop that prints key and value
+        foreach($json as $key => $value)
+        {
+            //If the key is session key, return the session key
+            if(preg_match("/sesid/", $key))
+                return $value;
+                
+                //If the value is an array, make a recursive call.
+                // I shouldn't really need this else if but hey, just to be safe.
+                else if(is_array($value))
+                    return extractSessionID($value);
+                    
+        }//End of foreach($json as $key => $value)
+        
+        return "";  //Return an empty string if there is no session key in the array.
+    }//End of if(is_array($json))
+    
+    return null;  //returns null if an array was not pasted in as a paramater.
+}//End of function extractSessionID($json)
+//END OF UTILIY FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//START OF DATABASE FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////
+//These functions interface with the MySQL Database for the Wordpress site
 
 //Database Connect function
 function open_db()
@@ -92,31 +136,12 @@ function run_query($conn, $query)
     
     return $result; //return successful query
 }//End of function run_query($conn, $query)
+//END OF DATABASE FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////////
 
-//Extract Session ID's from the JSON
-function extractSessionID($json)
-{
-    if(is_array($json)) //Is the paramater an array?
-    {
-        //for loop that prints key and value
-        foreach($json as $key => $value)
-        {
-            //If the key is session key, return the session key
-            if(preg_match("/sesid/", $key))
-                return $value;
-                
-            //If the value is an array, make a recursive call.
-            // I shouldn't really need this else if but hey, just to be safe.
-            else if(is_array($value))
-                return extractSessionID($value);
-                    
-        }//End of foreach($json as $key => $value)
-        
-        return "";  //Return an empty string if there is no session key in the array.
-    }//End of if(is_array($json))
-    
-    return null;  //returns null if an array was not pasted in as a paramater.
-}//End of function extractSessionID($json)
+
+//START OF CREDENTIAL FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////
+// These functions use the user's credentials to obtain Dancik sesson keys and Active Directory authentication.
+// They also store, check and clear the session data, as well.
 
 // Active Directory Login from Sengeta Menon
 // Just in case we need it
@@ -279,6 +304,7 @@ function portal_login()
  
    //Making Login Web Service Call to Sales Portal, decoding the JSON and removing password
    $json_str = file_get_contents(SP_PATH."signon?user=".$_SESSION['sales_user']."&pwd=".$sales_password);
+   //echo $json_str;
    $hold = json_decode($json_str, true);
    //unset($dancik['Sales_Password']);
    
@@ -291,6 +317,9 @@ function portal_login()
    {
        //Extracting Sales Portal Session
        $_SESSION['sales_session'] = extractSessionID($hold);
+       //$call = SP_CALL."getAccount".get_sales_credentials();
+       //$json_str = file_get_contents($call);
+       //echo $json_str;
    }//End of no error is returned conditional 
 }//End of function portal_login()
  
@@ -340,7 +369,20 @@ function portal_logout()
     session_destroy();
 }//End of function portal_logout()
 
-//Get Credentials String
+//Death Function
+//Kills page and session if something goes wrong and redirects user to the home page
+function death($message)
+{
+    portal_logout(); //Clearing Session and logging out of rest calls
+    header(HC_REDIRECT); /* Redirect browser */
+    die($message);
+}//End of function death($message)
+//END OF CREDENTIAL FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////
+
+//START OF CREDENTIAL RETRIEVAL FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////
+//These Functions return the strings that the DANCIK API uses to check username and session ids.
+
+//Get D24 Credentials String
 //Returns a string for entering credentials for Dancik RESTful Calls
 function get_credentials()
 {
@@ -353,29 +395,28 @@ function get_sales_credentials()
 {
     return "?dancik-session-user=".$_SESSION['sales_user']."&dancik-sessionid=".$_SESSION['sales_session'];
 }
-
-//Death Function
-//Kills page and session if something goes wrong and redirects user to the home page
-function death($message)
-{
-    portal_logout(); //Clearing Session and logging out of rest calls
-    header(HC_REDIRECT); /* Redirect browser */
-    die($message);
-}//End of function death($message)
-//End of Credential Functions///////////////////////////////////////////////////////////////////////////////////////////////////
+//END OF CREDENTIAL RETRIEVAL FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////
 
 //TESTING FOR EXTERNAL LINKS WITH DANCIK CREDENTIALS////////////////////////////////////////////////////////////////////////////
 // Orders and inventory function
 function orders_inventory()
 {
-    header("Location:  http://jjh400.jjhaines.com/danciko/d24/main/".get_credentials(), false);
+    $button = "<button onclick=\"orders_inventory_redirect()\"";
+    $button .= "class = \"fusion-button button-flat fusion-button-square button-large button-default button-1\"";
+    $button .= ">Orders and Inventory</button>";
+    $button .= "<script>";
+    $button .= "function orders_inventory_redirect(){";
+    $button .= "window.open('http://jjh400.jjhaines.com/danciko/d24/main/".get_credentials()."', '_blank')}";
+    $button .= "</script>";
+    echo $button;
 }// End of function orders_inventory()
-
 //END OF TESTING FOR EXTERNAL LINKS WITH DANCIK CREDENTIALS/////////////////////////////////////////////////////////////////////
 
-//SEARCHING FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////////////
+//SEARCHING AND PRINTING FUNCTIONS//////////////////////////////////////////////////////////////////////////////////////////////
 // These functions make web service calls to Dancik or send queries to the MySQL database.
 // Then the search function calls the appropriate print function
+
+//START OF D24 PRODUCT FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////
 //Product Search Function
 function productSearch()
 {
@@ -385,6 +426,46 @@ function productSearch()
    printItems($products['items']);
 }//End of productSearch()
 
+//Print Items
+function printItems($items)
+{
+    //Creating table and header
+    $table = "<div class=\"table-1\">";
+    $table .= "<table width=\"100%\">";
+    $table .= "<thead>";
+    $table .= "<tr>";
+    $table .= "<th align=\"left\">ID</th>";
+    $table .= "<th align=\"left\">Color</th>";
+    $table .= "<th align=\"left\">Pattern</th>";
+    $table .= "<th align=\"left\">Description</th>";
+    $table .= "<th align=\"left\">Available Inventory</th>";
+    //$table .= "<th align=\"left\">Need to Order</th>";
+    $table .= "</tr>";
+    $table .= "</thead>";
+    $table .= "<tbody>";
+    
+    //For Loop going through each invoice
+    foreach($items as $item)
+    {
+        $table .= "<tr>";
+        $table .= "<td align=\"left\">".$item['id_dsp']."</td>";
+        $table .= "<td align=\"left\">".$item['color']."</td>";
+        $table .= "<td align=\"left\">". preg_replace("/reducer/i", 'EDUCER', $item['patterndescription_dsp'])."</td>";
+        $table .= "<td align=\"left\">".$item['description1']." ".$item['description2']."</td>";
+        $table .= "<td align=\"left\">".$item['available_inventory']."</td>";
+        //$table .= "<td align=\"left\">".$item['insufficient_inventory_flag']."</td>";
+        $table .= "</tr>";
+    }//End of foreach($items as $item)
+    
+    $table .= "</tbody>";
+    $table .= "</table>";
+    $table .= "</div>";
+    
+    echo $table;
+}//End of Print Items
+//END OF D24 PRODUCT FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////
+
+//START OF D24 PRICE FUNCTIONS//////////////////////////////////////////////////////////////////////////////////////////////////
 //Price Search Function
 // It used to go here http://jjh400:8000/price-catalogs
 function priceSearch()
@@ -395,6 +476,43 @@ function priceSearch()
     printBestPrices($prices['best_price']);
 }//End of productSearch()
 
+//Print Best Prices
+function printBestPrices($best_prices)
+{
+    //Creating Table Head
+    $table = "<div class=\"table-1\">";
+    $table .= "<table width=\"100%\">";
+    $table .= "<thead>";
+    $table .= "<tr>";
+    $table .= "<th align=\"left\">Date</th>";
+    $table .= "<th align=\"left\">Name</th>";
+    $table .= "<th align=\"left\">Best Price</th>";
+    $table .= "</tr>";
+    $table .= "</thead>";
+    $table .= "<tbody>";
+    
+    //For Loop going through each invoice
+    foreach($best_prices as $price)
+    {
+        $table .= "<tr>";
+        //preg_replace("/(\d\d\/\d\d\/\d\d)\s+\d\d:\d\d/", , $price['date']);
+        $table .= "<td align=\"left\">".$price['date']."</td>";
+        $table .= "<td align=\"left\">".$price['name']."</td>";
+        $table .= "<td align=\"left\">$".number_format((float)$price['best_price'], 2, '.' , ',')."</td>";
+        $table .= "</tr>";
+    }//End of foreach($items as $item)
+    
+    //Finishing Table
+    $table .= "</tbody>";
+    $table .= "</table>";
+    $table .= "</div>";
+    
+    echo $table;
+}//End of Print Best Prices
+//END OF D24 PRICE FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+//START OF MILL CLAIM FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////
 // Mill Claim Search
 function mill_claim_search()
 {
@@ -486,8 +604,55 @@ function mill_claim_search()
     close_db($conn); // Closing Mill Claim DB connection
 }//End of function mill_claim_search()
 
-// Sales Portal Function
-function sales_portal()
+//Print Mill Claim function
+function printMillClaim($result)
+{
+    //Creating table header
+    $table = "<div class=\"table-2\">";
+    $table .= "<table width=\"100%\">";
+    $table .= "<thead>";
+    $table .= "<tr>";
+    $table .= "<th align=\"left\">ID</th>";
+    $table .= "<th align=\"left\">Claim Number</th>";
+    $table .= "<th align=\"left\">Claim Status</th>";
+    $table .= "<th align=\"left\">Customer Account</th>";
+    //$table .= "<th align=\"left\">Account Executive</th>";
+    $table .= "<th align=\"left\">Consumer</th>";
+    $table .= "<th align=\"left\">Customer</th>";
+    $table .= "<th align=\"left\">Manufacturer</th>";
+    $table .= "<th align=\"left\">Item</th>";
+    $table .= "</tr>";
+    $table .= "</thead>";
+    $table .= "<tbody>";
+    
+    //Loop that goes through each row of the query
+    while($row = $result->fetch_assoc())
+    {
+        $table .= "<tr>";
+        $table .= "<td align=\"left\">{$row["ID"]}</td>";
+        $table .= "<td align=\"left\">{$row["Claim Number"]}</td>";
+        $table .= "<td align=\"left\">{$row["Claim Status"]}</td>";
+        $table .= "<td align=\"left\">{$row["Customer Account Number"]}</td>";
+        //$table .= "<td align=\"left\">{$row["Account Executive Last Name"]}</td>";
+        $table .= "<td align=\"left\">{$row["Consumer Name"]}</td>";
+        $table .= "<td align=\"left\">{$row["Customer Name"]}</td>";
+        $table .= "<td align=\"left\">{$row["Manufacturer Name"]}</td>";
+        $table .= "<td align=\"left\">{$row["Item Number"]}</td>";
+        $table .= "</tr>";
+    }//End of while($row = $result->fetch_assoc())
+    
+    //Finishing the Table
+    $table .= "</tbody>";
+    $table .= "</table>";
+    $table .= "</div>";
+    
+    echo $table; //Printing table
+}//End of Print Mill Claim
+//END OF MILL CLAIM FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////
+
+//START OF SALES PORTAL CUSTOMER FUNCTIONS//////////////////////////////////////////////////////////////////////////////////////
+// Customer Search Function
+function customer_search()
 {
     //Creating search form
     $form = "<form action=\"\" method=\"post\">Search Term:<input name=\"keyword\" type=\"text\" />";
@@ -502,13 +667,211 @@ function sales_portal()
         //Making webservice calls
         $call = SP_CALL."getCustomers".get_sales_credentials()."&keyword=".$_POST['keyword']."&startingRecord=".$_POST['start'];
         $json_str = file_get_contents($call);
+        //echo $json_str;
         $hold = json_decode($json_str, true);
         $records = $hold['records'];
         $query_size = $hold['info']['querysize'];
         printCustomers($records, $query_size, $_POST['keyword']);  //Printing results
     }//End of if(isset($_POST['keyword']))
-}//End of function sales_portal()
+}//End of function customer_search()
 
+//Print Customers
+function printCustomers($customers, $size, $keyword)
+{
+    $i = 1; //Iterator for forms
+    //Creating a new table
+    $table = "<div class=\"table-1\">";
+    $table .= "<table width=\"100%\">";
+    $table .= "<tbody>";
+    
+    //For Loop for each customer
+    foreach($customers as $customer)
+    {        
+        $table .= "<tr>"; //Starting a row
+        $table .= "<td style=\"text-align:left;\">";
+        $table .= "<form action=\"../customer-metrics/\" method=\"post\" id=\"customer".($i)."\" name=\"customer".($i)."\">";
+        $table .= "<input name=\"cust_name\" type=\"hidden\" value=\"".$customer['name']."\" />";
+        $table .= "<input name=\"acct\" type=\"hidden\" value=\"".$customer['acct']."\" />";
+        $table .= "<input name=\"addr1\" type=\"hidden\" value=\"".$customer['addr1']."\" />";
+        $table .= "<input name=\"addr2\" type=\"hidden\" value=\"".$customer['addr2']."\" />";
+        $table .= "<input name=\"city\" type=\"hidden\" value=\"".$customer['city']."\" />";
+        $table .= "<input name=\"state\" type=\"hidden\" value=\"".$customer['state']."\" />";
+        $table .= "<input name=\"zip\" type=\"hidden\" value=\"".$customer['zip']."\" />";
+        $table .= "<input name=\"phone\" type=\"hidden\" value=\"".$customer['phone']."\" />";
+        $table .= "<input name=\"keyword\" type=\"hidden\" value=\"".$keyword."\" />";
+        $table .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'])."\" />";
+        $table .= "</form>";
+        $table .= "<button ";
+        $table .= "style=\"background:none!important; ";
+        $table .= "color:inherit; ";
+        $table .= "text-align:left; ";
+        $table .= "border:none; ";
+        $table .= "padding:0!important; ";
+        $table .= "font:inherit; ";
+        $table .= "cursor:pointer;";
+        $table .= "\"";
+        $table .= "type=\"submit\" form=\"customer".($i)."\" value=\"Submit\">";
+        
+        //Customer Information displayed in a one-cell row
+        $table .= "<strong>";
+        $table .= $customer['name']." (".$customer['acct'].")";
+        $table .= "</strong></br>";
+        $table .= $customer['addr1']."<br>";
+        if(trim($customer['addr2']) != "") $table .= $customer['addr2']."<br>";
+        $table .= $customer['city'].", ".$customer['state']." ".$customer['zip']."<br>";
+        $table .= $customer['phone']."<br>";
+        
+        $table .= "</button>";
+        $table .= "</td>";
+        $table .= "</tr>"; //Ending the row
+        $i++;
+    }//End of foreach($customers as $customer)
+    
+    //Finishing table
+    $table .= "</tbody>";
+    $table .= "</table>";
+    $table .= "</div><br><br>";
+    
+    echo $table;
+    
+    //Div to align the previous and next buttons
+    echo "<div style=\"display:flex;\">";
+    
+    //Starting past the first record conditional
+    if($_POST['start'] > 1)
+    {
+        //Creating the previous button
+        $prev = "<form method=\"post\" align=\"left\">";
+        $prev .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
+        $prev .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] - 25)."\" />";
+        $prev .= "<input type=\"submit\" class=\"";
+        $prev .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
+        $prev .= "name=\"prev\" id=\"prev\" value=\"Previous 25\" /></form>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
+        echo $prev;
+    }//End of if($_POST['start'] > 1)
+    
+    //Not starting within the last 25 records conditional
+    if($_POST['start'] < $size - 25)
+    {
+        //Creating the next button
+        $next = "<form method=\"post\" align=\"right\">";
+        $next .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
+        $next .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] + 25)."\" />";
+        $next .= "<input type=\"submit\" class=\"";
+        $next .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
+        $next .= "name=\"next\" id=\"next\" value=\"Next 25\" /></form>";
+        echo $next;
+    }//End of if($_POST['start'] < $size - 25)
+    
+    echo "</div><br><br>"; //End of dive that aligns the previous and next buttons
+}//End of function printCustomers($customers, $size, $keyword)
+
+//Customer Metrics Function
+function customer_metrics()
+{
+    $display = "<p>";
+    $display .= "<strong>";
+    $display .= $_POST['cust_name']." (".$_POST['acct'].")";
+    $display .= "</strong></br>";
+    $display .= $_POST['addr1']."<br>";
+    if(trim($_POST['addr2']) != "") $display .= $_POST['addr2']."<br>";
+    $display .= $_POST['city'].", ".$_POST['state']." ".$_POST['zip']."<br>";
+    $display .= $_POST['phone']."<br>";
+    $display .= "</p>";
+    echo $display;
+   
+    $call  = SP_CALL."getSalesMonthbyMonth".get_sales_credentials()."&comp=0&slsm=112";
+    $json_str = file_get_contents($call);
+    //echo $json_str;
+    $hold = json_decode($json_str, true);
+    $metrics = $hold['past12mm'];
+    
+    $table = "<div class=\"table-1\">";
+    $table .= "<table width=\"100%\">";
+    
+    $table .= "<thead>";
+    $table .= "<tr>";
+    $table .= "<th align=\"left\">Gross Sale</th>";
+    $table .= "<th align=\"left\">Gross Percentage</th>";
+    $table .= "<th align=\"left\">Average Order</th>";
+    $table .= "<th align=\"left\">Month</th>";
+    $table .= "</tr>";
+    $table .= "</thead>";
+    $table .= "<tbody>";
+    
+    foreach($metrics as $metric)
+    {
+        $table .= "<tr>";
+        $table .= "<td><strong>".$metric['gross_sale']."</strong></td>";
+        $table .= "<td>".$metric['gross_pct']."</td>";
+        $table .= "<td>".$metric['avg_order']."</td>";
+        $table .= "<td>".$metric['month_year']."</td>";
+        $table .= "</tr>";
+    }
+    
+    $table .= "</tbody></table></div></br>";
+    echo $table;
+    
+    open_orders($_POST['acct']);
+    
+    $button = "<form action=\"https://jjhaines.net/customer-search/\" method=\"post\">";
+    $button .= "<input type=\"hidden\" value=\"".$_POST['keyword']."\" name=\"keyword\" />";
+    $button .= "<input type=\"hidden\" value=\"".$_POST['start']."\" name=\"start\" />";
+    $button .= "<input type=\"submit\" class=\"fusion-button button-flat ";
+    $button .= "fusion-button-square button-large button-default button-1\" name=\"cs\" id=\"cs\" ";
+    $button .= "value=\"Return to Customer Search\" /><br/></form></br></br>";
+    echo $button;
+   
+}//End of function customer_metrics()
+
+//Open Orders Function
+//Displays open orders for the customer
+function open_orders($account)
+{
+    //$json_str = file_get_contents(SP_CALL."getOpenOrders".get_sales_credentials()."&comp=0&acct=".$account);
+    //echo $json_str;
+    
+    $json_str = file_get_contents(HC_PATH."getOpenOrders".get_credentials());
+    $hold = json_decode($json_str, true);
+    $open_orders = $hold['openorders'];
+    
+    //Creating table header
+    $table = "<div class=\"table-2\">";
+    $table .= "<table width=\"100%\">";
+    $table .= "<thead>";
+    $table .= "<tr>";
+    $table .= "<th align=\"left\">Order Number</th>";
+    $table .= "<th align=\"left\">Purchasing Order Number</th>";
+    $table .= "<th align=\"left\">Reference Number</th>";
+    $table .= "<th align=\"left\">Ship Date</th>";
+    $table .= "<th align=\"left\">Order Date</th>";
+    $table .= "</tr>";
+    $table .= "</thead>";
+    $table .= "<tbody>";
+    
+    //Loop that goes through each row of the query
+    foreach($open_orders as $open_order)
+    {
+        $table .= "<tr>";
+        $table .= "<td align=\"left\">{$open_order["order"]}</td>";
+        $table .= "<td align=\"left\">{$open_order["po"]}</td>";
+        $table .= "<td align=\"left\">{$open_order["reference"]}</td>";
+        $table .= "<td align=\"left\">{$open_order["shipdate"]}</td>";
+        $table .= "<td align=\"left\">{$open_order["orderdate"]}</td>";
+        $table .= "</tr>";
+    }//End of while($row = $result->fetch_assoc())
+    
+    //Finishing the Table
+    $table .= "</tbody>";
+    $table .= "</table>";
+    $table .= "</div></br></br>";
+    
+    echo $table; //Printing table
+}//End of function open_orders()
+
+//END OF SALES PORTAL CUSTOMER FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////
+
+//START OF SALES PORTAL ITEMS FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////
 //Sales Portal Items Search
 function itemsSearch()
 {
@@ -554,275 +917,6 @@ function itemsSearch()
         
     printSalesItems($records, $query_size, $keyword);
 }//End of itemsSearch()
-//END OF SEARCHING FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////
-
-//PRINTING FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////////////
-// These function write tables that display the data to the web page.
-//Print Invoices
-function print_invoices($invoices)
-{
-    //Creating the table
-    $table = "<div class=\"table-1\">";
-    $table .= "<table width=\"100%\">";
-    
-    //Creating head row
-    $table .= "<thead>";
-    $table .= "<tr>";
-    $table .= "<th align=\"left\">Reference</th>";
-    $table .= "<th align=\"left\">Amount</th>";
-    $table .= "<th align=\"left\">Amount Due</th>";
-    $table .= "<th align=\"left\">Due Date</th>";
-    $table .= "<th align=\"left\">Discount</th>";
-    $table .= "<th align=\"left\">Invoice ID</th>";
-    $table .= "<th align=\"left\">Amount Paid</th>";
-    $table .= "<th align=\"left\">Invoice Date</th>";
-    $table .= "<th align=\"left\">PO</th>";
-    $table .= "</tr>";
-    $table .= "</thead>";
-    $table .= "<tbody>"; //Start Data Rows
-    
-    //For Loop going through each invoice
-    foreach($invoices as $invoice)
-    {
-        $table .= "<tr>"; //Start new row
-        //For Loop for each individual invoice
-        foreach($invoice as $value)
-        {
-            //Print the table row
-            $table .= "<td align=\"left\">".$value."</td>";
-        }//End of foreach($invoice as $value)
-        $table .= "</tr>"; //Finishing the row
-    }//End of foreach($invoices as $invoice)
-    
-    // Finishing the table
-    $table .= "</tbody>";
-    $table .= "</table>";
-    $table .= "</div>";
-    
-    echo $table;
-}//End of Print Invoices
-
-//Print Items
-function printItems($items)
-{
-    //Creating table and header
-    $table = "<div class=\"table-1\">";
-    $table .= "<table width=\"100%\">";
-    $table .= "<thead>";
-    $table .= "<tr>";
-    $table .= "<th align=\"left\">ID</th>";
-    $table .= "<th align=\"left\">Color</th>";
-    $table .= "<th align=\"left\">Pattern</th>";
-    $table .= "<th align=\"left\">Description</th>";
-    $table .= "<th align=\"left\">Available Inventory</th>";
-    //$table .= "<th align=\"left\">Need to Order</th>";
-    $table .= "</tr>";
-    $table .= "</thead>";
-    $table .= "<tbody>";
-    
-    //For Loop going through each invoice
-    foreach($items as $item)
-    {
-        $table .= "<tr>";
-        $table .= "<td align=\"left\">".$item['id_dsp']."</td>";
-        $table .= "<td align=\"left\">".$item['color']."</td>";
-        $table .= "<td align=\"left\">". preg_replace("/reducer/i", 'EDUCER', $item['patterndescription_dsp'])."</td>";
-        $table .= "<td align=\"left\">".$item['description1']." ".$item['description2']."</td>";
-        $table .= "<td align=\"left\">".$item['available_inventory']."</td>";
-        //$table .= "<td align=\"left\">".$item['insufficient_inventory_flag']."</td>";
-        $table .= "</tr>";
-    }//End of foreach($items as $item)
-    
-    $table .= "</tbody>";
-    $table .= "</table>";
-    $table .= "</div>";
-    
-    echo $table;
-}//End of Print Items
-
-//Print Best Prices
-function printBestPrices($best_prices)
-{
-    //Creating Table Head
-    $table = "<div class=\"table-1\">";
-    $table .= "<table width=\"100%\">";
-    $table .= "<thead>";
-    $table .= "<tr>";
-    $table .= "<th align=\"left\">Date</th>";
-    $table .= "<th align=\"left\">Name</th>";
-    $table .= "<th align=\"left\">Best Price</th>";
-    $table .= "</tr>";
-    $table .= "</thead>";
-    $table .= "<tbody>";
-    
-    //For Loop going through each invoice
-    foreach($best_prices as $price)
-    {
-        $table .= "<tr>";
-        //preg_replace("/(\d\d\/\d\d\/\d\d)\s+\d\d:\d\d/", , $price['date']);
-        $table .= "<td align=\"left\">".$price['date']."</td>";
-        $table .= "<td align=\"left\">".$price['name']."</td>";
-        $table .= "<td align=\"left\">$".number_format((float)$price['best_price'], 2, '.' , ',')."</td>";
-        $table .= "</tr>";
-    }//End of foreach($items as $item)
-    
-    //Finishing Table
-    $table .= "</tbody>";
-    $table .= "</table>";
-    $table .= "</div>";
-    
-    echo $table;
-}//End of Print Best Prices
-
-//Function to Print Account
-function printAccount($accountInfo)
-{
-    //Creating table and header
-    $table = "<div class=\"table-1\">";
-    $table .= "<table width=\"100%\">";
-    $table .= "<thead>";
-    $table .= "<tr>";
-    $table .= "<th align=\"left\">User</th>";
-    $table .= "<th align=\"left\">Account Name</th>";
-    $table .= "<th align=\"left\">Account ID</th>";
-    $table .= "<th align=\"left\">Warehouse ID</th>";
-    $table .= "<th align=\"left\">Address</th>";
-    $table .= "<th align=\"left\">City</th>";
-    $table .= "<th align=\"left\">State</th>";
-    $table .= "<th align=\"left\">Zip Code</th>";
-    $table .= "<th align=\"left\">Phone</th>";
-    $table .= "<th align=\"left\">Fax</th>";
-    $table .= "</tr>";
-    $table .= "</thead>";
-    
-    //Creating table body
-    $table .= "<tbody>";
-    $table .= "<tr>";
-    $table .= "<td align=\"left\">{$accountInfo['userid']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['account_name']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['accountid']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['warehouseid']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['address1']}, {$accountInfo['address2']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['city']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['state']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['zip']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['phone']}</td>";
-    $table .= "<td align=\"left\">{$accountInfo['fax']}</td>";
-    $table .= "</tr>";
-    
-    //Finishing table
-    $table .= "</tbody>";
-    $table .= "</table>";
-    $table .= "</div><br><br>";
-    
-    echo $table;
-}//End of Print Account
-
-//Print Mill Claim function
-function printMillClaim($result)
-{
-    //Creating table header
-    $table = "<div class=\"table-2\">";
-    $table .= "<table width=\"100%\">";
-    $table .= "<thead>";
-    $table .= "<tr>";
-    $table .= "<th align=\"left\">ID</th>";
-    $table .= "<th align=\"left\">Claim Number</th>";
-    $table .= "<th align=\"left\">Claim Status</th>";
-    $table .= "<th align=\"left\">Customer Account</th>";
-    //$table .= "<th align=\"left\">Account Executive</th>";
-    $table .= "<th align=\"left\">Consumer</th>";
-    $table .= "<th align=\"left\">Customer</th>";
-    $table .= "<th align=\"left\">Manufacturer</th>";
-    $table .= "<th align=\"left\">Item</th>";
-    $table .= "</tr>";
-    $table .= "</thead>";
-    $table .= "<tbody>";
-    
-    //Loop that goes through each row of the query
-    while($row = $result->fetch_assoc())
-    {
-        $table .= "<tr>";
-        $table .= "<td align=\"left\">{$row["ID"]}</td>";
-        $table .= "<td align=\"left\">{$row["Claim Number"]}</td>";
-        $table .= "<td align=\"left\">{$row["Claim Status"]}</td>";
-        $table .= "<td align=\"left\">{$row["Customer Account Number"]}</td>";
-        //$table .= "<td align=\"left\">{$row["Account Executive Last Name"]}</td>";
-        $table .= "<td align=\"left\">{$row["Consumer Name"]}</td>";
-        $table .= "<td align=\"left\">{$row["Customer Name"]}</td>";
-        $table .= "<td align=\"left\">{$row["Manufacturer Name"]}</td>";
-        $table .= "<td align=\"left\">{$row["Item Number"]}</td>";
-        $table .= "</tr>";
-    }//End of while($row = $result->fetch_assoc())
-    
-    //Finishing the Table
-    $table .= "</tbody>";
-    $table .= "</table>";
-    $table .= "</div>";
-    
-    echo $table; //Printing table
-}//End of Print Mill Claim
-
-//Print Customers
-function printCustomers($customers, $size, $keyword)
-{
-    //Creating a new table
-    $table = "<div class=\"table-1\">";
-    $table .= "<table width=\"100%\">";
-    $table .= "<tbody>";
-    
-    //For Loop for each customer
-    foreach($customers as $customer)
-    {
-        $table .= "<tr>"; //Starting a row
-        $table .= "<td>";
-        
-        //Customer Information displayed in a one-cell row
-        $table .= "<strong>";
-        $table .= $customer['name']." (".$customer['acct'].")";
-        $table .= "</strong><br>";
-        $table .= $customer['addr1']."<br>";
-        if(trim($customer['addr2']) != "") $table .= $customer['addr2']."<br>";
-        $table .= $customer['city'].", ".$customer['state']." ".$customer['zip']."<br>";
-        $table .= $customer['phone']."<br>";
-        
-        $table .= "</td>";
-        $table .= "</tr>"; //Ending the row
-    }//End of foreach($customers as $customer)
-    
-    //Finishing table
-    $table .= "</tbody>";
-    $table .= "</table>";
-    $table .= "</div><br><br>";
-    
-    echo $table;
-    
-    echo "<div style=\"display:flex;\">";
-    
-    if($_POST['start'] > 1)
-    {
-        $prev = "<form method=\"post\" align=\"left\">";
-        $prev .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
-        $prev .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] - 25)."\" />";
-        $prev .= "<input type=\"submit\" class=\"";
-        $prev .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
-        $prev .= "name=\"prev\" id=\"prev\" value=\"Previous 25\" /></form>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
-        echo $prev;
-    }
-    
-    if($_POST['start'] < $size - 25)
-    {
-        $next = "<form method=\"post\" align=\"right\">";
-        $next .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
-        $next .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] + 25)."\" />";
-        $next .= "<input type=\"submit\" class=\"";
-        $next .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
-        $next .= "name=\"next\" id=\"next\" value=\"Next 25\" /></form>";
-        echo $next;
-    }
-    
-    echo "</div><br><br>";
-}//End of function printCustomers($customers, $size, $keyword)
 
 //Print Sales Items
 function printSalesItems($items, $size, $keyword)
@@ -834,8 +928,8 @@ function printSalesItems($items, $size, $keyword)
     
     //For Loop for each customer
     foreach($items as $item)
-    {        
-        //Customer Information displayed in a one-cell row
+    {
+        //Product Information displayed in a two-cell row
         $table .= "<tr>"; //Starting a row
         $table .= "<td style=\"border-right-style:none; text-align:left;\">";
         $table .= "<strong>".$item['item']."</strong><br>";
@@ -861,10 +955,13 @@ function printSalesItems($items, $size, $keyword)
     
     echo $table;
     
+    //Div to align the previous and next buttons
     echo "<div style=\"display:flex;\">";
     
+    //Conditional to check to see if the previous button should be created
     if(isset($_POST['start']) && $_POST['start'] > 1)
     {
+        //Creating the previous button
         $prev = "<form method=\"post\" align=\"left\">";
         $prev .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
         $prev .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] - 25)."\" />";
@@ -872,20 +969,24 @@ function printSalesItems($items, $size, $keyword)
         $prev .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
         $prev .= "name=\"prev\" id=\"prev\" value=\"Previous 25\" /></form>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;";
         echo $prev;
-    }
+    }//End of if(isset($_POST['start']) && $_POST['start'] > 1)
     
+    //Conditional to see if the next button should be created
     if(!isset($_POST['start']) || $_POST['start'] < $size - 25)
     {
+        //If the post doesn't have a start location, start at 1
         if(!isset($_POST['start']))
         {
             $start = 1;
         }
         
+        //Otherwise, start with what is stored in post
         else
         {
             $start = $_POST['start'];
         }
         
+        //Creating the next button
         $next = "<form method=\"post\" align=\"right\">";
         $next .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
         $next .= "<input name=\"start\" type=\"hidden\" value=\"".($start + 25)."\" />";
@@ -893,10 +994,12 @@ function printSalesItems($items, $size, $keyword)
         $next .= "fusion-button button-flat fusion-button-square button-large button-default button-1\" ";
         $next .= "name=\"next\" id=\"next\" value=\"Next 25\" /></form>";
         echo $next;
-    }
+    }//End of if(!isset($_POST['start']) || $_POST['start'] < $size - 25)
     
-    echo "</div><br><br>";
-}//End of function printCustomers($customers, $size, $keyword)
-//END OF PRINTING FUNCTIONS//////////////////////////////////////////////////////////////////////////////////////////////////
+    echo "</div><br><br>"; //End of dive that aligns the previous and next buttons
+}//End of function printSalesItems($items, $size, $keyword)
+//END OF SALES PORTAL ITEMS FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////
+
+//END OF SEARCHING AND PRINTING FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////
 // END OF CODE FOR WEB SERVICE CALLS
 ?>
