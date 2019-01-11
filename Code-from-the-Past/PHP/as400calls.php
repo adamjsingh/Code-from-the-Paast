@@ -25,7 +25,14 @@
  * exit();
  * 
  * should be placed right after get_footer();
+ * 
+ * 
  */
+
+require '/var/www/wordpress/jjhaines/awsphp/aws-autoloader.php';
+use Aws\Kms\KmsClient as KMSClient;
+use Aws\Exception\AwsException;
+
 
 //Path for Web Service Calls, Data Table Names and Login Redirect
 define('HC_PATH', 'http://jjh400.jjhaines.com/danciko/dancik-ows/d24/');
@@ -85,10 +92,10 @@ function extractSessionID($json)
             if(preg_match("/sesid/", $key))
                 return $value;
                 
-                //If the value is an array, make a recursive call.
-                // I shouldn't really need this else if but hey, just to be safe.
-                else if(is_array($value))
-                    return extractSessionID($value);
+             //If the value is an array, make a recursive call.
+             // I shouldn't really need this else if but hey, just to be safe.
+             else if(is_array($value))
+                return extractSessionID($value);
                     
         }//End of foreach($json as $key => $value)
         
@@ -136,6 +143,19 @@ function run_query($conn, $query)
     
     return $result; //return successful query
 }//End of function run_query($conn, $query)
+
+//Prepare and Excute Function Function
+function prepare_execute($conn, $query)
+{
+    //If the query fails, close the connection and redirect to the user to the login page
+    if(!$stmt = $conn->prepare($query))
+    {
+        close_db($conn);
+        death("Could not query.");
+    }//End of if(!$result = $conn->query($query))
+    
+    return $stmt->execute(); //return successful query
+}//End of function prepare_execute($conn, $query)
 //END OF DATABASE FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
@@ -249,12 +269,24 @@ function check_session()
 //Collects all of user's credentials and stores them in the session if there is a new user
 function portal_login()
 {
-    /*
+   /*
    $username =  wp_user_retrieval(); //Retrieving user
    
    //Checking username is not in the session
    if(!isset($_SESSION['username']) || $_SESSION['username'] != $username)
    {
+       //Logging out previous session and starting a new.
+       portal_logout();
+       if(!isset($_SESSION)) session_start();
+       
+       // Create a KMSClient
+       $key = "arn:aws:kms:us-east-1:086480065013:key/915f0862-29f5-4c56-b377-e3f1ff2d4b98";
+       $kmsClient = new Aws\Kms\KmsClient([
+        'profile' => 'default',
+        'version' => '2014-11-01',
+        'region'  => 'us-east-1'
+       ]);
+       
        //All the code below will go here when ready.
    }//End of if(!isset($_SESSION['username']) || $_SESSION['username'] != $username)
    */
@@ -262,10 +294,9 @@ function portal_login()
    //Temporary until user table is setup
    $_SESSION['username'] = "portalae"; 
    $_SESSION['sales_user'] = "asingh";
-   //$_SESSION['customer_pagination'] = 1;
    $sales_password = "asingh";
    
-   //$_SESSION['username'] = wp_user_retrieval();
+   //$_SESSION['username'] = $username();
    
    $conn = open_db(); // Create connection
    //Create query to retrieve Dancik Creendtials
@@ -282,8 +313,20 @@ function portal_login()
    $_SESSION['role'] = $dancik['RoleID'];
    close_db($conn); //Closing Database connection
 
+   /*
+   //Decrypting passwords
+   //Use $d24['Plaintext'] and $sales['Plaintext'] as passwords for the login APIs
+   $d24 = $kmsClient->decrypt([
+       'CipphertextBlob' => $dancik['DancikPassword']       
+   ]);
+   
+   $sales = $kmsClient->decrypt([
+       'CipphertextBlob' => $dancik['SalesPassword']
+   ]);
+   */
+   
    //Making Login Web Service Call to D24, decoding the JSON and removing password
-   $json_str = file_get_contents(HC_PATH."/login/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$dancik['DancikPassword']);
+   $json_str = file_get_contents(HC_PATH."login/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$dancik['DancikPassword']);
    $hold = json_decode($json_str, true);
    unset($dancik['DancikPassword']);
   
@@ -324,46 +367,47 @@ function portal_login()
 }//End of function portal_login()
  
  //Logout Function
+ // Function destroys the session, to log out user
 function portal_logout()
 {
     // Iteration counters to stop loops so not to hang page.
     $d24_count = 0;
     $sp_count = 0;
-    
-    // Loging off of D24 and Sales Portal loops.
-    // These are loops so that if there is a failure, it will try to logoff again.
-    // There are a limited number of iterations in case there is an issue with the Rest servers, therefore
-    // the user cannot logout and loop would be virtually infinite and may crash the system.
-    do
-    {
-        $json_str = file_get_contents(HC_PATH."/logoff/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$_SESSION['sesid']);
-        $d24 = json_decode($json_str, true);
-        $d24_count++;
-    }while(!isset($d24['success']) || $d24_count < 5); //Keep trying to logoff until successful
-    
-    do
-    {
-        $json_str = file_get_contents(SP_PATH."signoff?dancik-session-user=".$_SESSION['dancik_user']."&dancik-sessionid=".$_SESSION['sales_session']);
-        $sp = json_decode($json_str, true);
-        $sp_count++;
-    }while(!isset($sp['success']) || $sp_count < 5); //Keep trying to logoff until successful
-    //End of D24 and Sales Portal loops
-    
-    //Logoff failure notifications
-    //There is no call to die because death calls portal_logout and die.
-    if(!isset($d24['success'])) echo "Failure to logoff D24 Web Service Calls.  Contact JJ Haines IT support.<br>";
-    if(!isset($sp['success'])) echo "Failure to logoff Sales Portal Web Service Calls.  Contact JJ Haines IT support.<br>";
-    
-    // Function destroys the session, to log out user
+        
     // Unsetting the session attributes that I created, session destroy does not unset them
+    
+    //Session Key checks and log off loops
+    if(isset($_SESSION['sesid']))
+    {
+        do //Do While loopto keep loggin off until sucessful, within five tries.
+        {
+            $json_str = file_get_contents(HC_PATH."logoff/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$_SESSION['sesid']);
+            $d24 = json_decode($json_str, true);
+            $d24_count++;
+        }while(!isset($d24['success']) || $d24_count < 5); //Keep trying to logoff until successful
+        
+        if(!isset($d24['success'])) echo "Failure to logoff D24 Web Service Calls.  Contact JJ Haines IT support.<br>";
+        unset($_SESSION['sesid']);
+    }//End of if(isset($_SESSION['sesid']))
+    
+    if(isset($_SESSION['sales_session']))
+    {
+        do //Do While loopto keep loggin off until sucessful, within five tries.
+        {
+            $json_str = file_get_contents(SP_PATH."signoff?dancik-session-user=".$_SESSION['dancik_user']."&dancik-sessionid=".$_SESSION['sales_session']);
+            $sp = json_decode($json_str, true);
+            $sp_count++;
+        }while(!isset($sp['success']) || $sp_count < 5); //Keep trying to logoff until successful
+        
+        if(!isset($sp['success'])) echo "Failure to logoff Sales Portal Web Service Calls.  Contact JJ Haines IT support.<br>";
+        unset($_SESSION['sales_session']);
+    }//End of if(isset($_SESSION['sales_session']))
+    
     if(isset($_SESSION['username'])) unset($_SESSION['username']);
-    if(isset($_SESSION['sesid'])) unset($_SESSION['sesid']);
     if(isset($_SESSION['acctid'])) unset($_SESSION['acctid']);
     if(isset($_SESSION['dancik_user'])) unset($_SESSION['dancik_user']);
     if(isset($_SESSION['role'])) unset($_SESSION['role']);
     if(isset($_SESSION['sales_user'])) unset($_SESSION['sales_user']);
-    if(isset($_SESSION['sales_session'])) unset($_SESSION['sales_session']);
-    //if(isset($_SESSION['customer_pagination'])) unset($_SESSION['customer_pagination']);
     
     $_SESSION = array();
     session_destroy();
@@ -772,11 +816,15 @@ function customer_metrics()
     $display = "<p>";
     $display .= "<strong>";
     $display .= $_POST['cust_name']." (".$_POST['acct'].")";
-    $display .= "</strong></br>";
+    $display .= "</strong><br>";
+    $display .= "<a href=\"https://maps.google.com/?q=";
+    $display .= $_POST['addr1'].", ";
+    if(trim($_POST['addr2']) != "") $display .= $_POST['addr2'].", ";
+    $display .= $_POST['city'].", ".$_POST['state']." ".$_POST['zip']."\" target=\"_blank\">";
     $display .= $_POST['addr1']."<br>";
     if(trim($_POST['addr2']) != "") $display .= $_POST['addr2']."<br>";
-    $display .= $_POST['city'].", ".$_POST['state']." ".$_POST['zip']."<br>";
-    $display .= $_POST['phone']."<br>";
+    $display .= $_POST['city'].", ".$_POST['state']." ".$_POST['zip']."</a><br><br>";
+    $display .= "<a href=\"tel:".$_POST['phone']."\" target=\"_blank\">".$_POST['phone']."</a><br>";
     $display .= "</p>";
     echo $display;
    
@@ -962,7 +1010,7 @@ function printSalesItems($items, $size, $keyword)
     if(isset($_POST['start']) && $_POST['start'] > 1)
     {
         //Creating the previous button
-        $prev = "<form method=\"post\" align=\"left\">";
+        $prev = "<form method=\"post\" align=\"left\ target=\"gform_ajax_frame_1\">";
         $prev .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
         $prev .= "<input name=\"start\" type=\"hidden\" value=\"".($_POST['start'] - 25)."\" />";
         $prev .= "<input type=\"submit\" class=\"";
@@ -987,7 +1035,7 @@ function printSalesItems($items, $size, $keyword)
         }
         
         //Creating the next button
-        $next = "<form method=\"post\" align=\"right\">";
+        $next = "<form method=\"post\" align=\"right\" target=\"gform_ajax_frame_1\">";
         $next .= "<input type=\"hidden\" name=\"keyword\" value=\"".$keyword."\" />";
         $next .= "<input name=\"start\" type=\"hidden\" value=\"".($start + 25)."\" />";
         $next .= "<input type=\"submit\" class=\"";
@@ -1000,6 +1048,124 @@ function printSalesItems($items, $size, $keyword)
 }//End of function printSalesItems($items, $size, $keyword)
 //END OF SALES PORTAL ITEMS FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////
 
+//START OF AWS KMS FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////////
+// Checks to see which keys are valid
+function checkKeys()
+{
+    //Create a KMSClient
+    $client = new KMSClient([
+        'profile' => 'default',
+        'version' => '2014-11-01',
+        'region'  => 'us-east-1'
+    ]);
+    
+    $result = $client->listKeys();
+    $keys = $result->get("Keys");
+    $test = "Hoy's my boy!";
+    
+    //For Loop for the keys
+    foreach($keys as $key)
+    {
+        try //Trying to encrypt and decrypt
+        {
+            $cipher = $client->encrypt([
+                'KeyId' => $key['KeyArn'],
+                'Plaintext' => $test,
+            ]);
+            
+            $plain = $client->decrypt([
+                'CiphertextBlob' => $cipher['CiphertextBlob'],
+            ]);
+            
+            echo "Key ID: ".$key['KeyId']."</br>";
+            echo "Key ARN: ".$key['KeyArn']."</br>";
+            echo "Test: ".$test."</br>";
+            echo "Encrypted: ".$cipher['CiphertextBlob']."</br>";
+            echo "Plain: ".$plain['Plaintext']."</br><br>";
+        }//End of try
+        
+        catch(Exception $e)
+        {
+            echo "Failed: ".$e->getMessage()."</br><br>";
+        }
+        
+    }//End of foreach($keys as $key)
+}//End of function checkKeys()
+//END OF AWS KMS FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////////
+
 //END OF SEARCHING AND PRINTING FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////
+
+//START OF DATA TABLE FUNCTIONS//////////////////////////////////////////////////////////////////////////////////////////////////
+// Function that creates ae survey form and stores results in the database
+function new_ae_survey()
+{
+    //If there Is a date in the POST, insett or update
+    if(isset($_POST['date']))
+    {
+        $conn = open_db(); //Open Daabase connection
+        $query = "SELECT * FROM WHERE";
+        run_query($conn, $query);
+        $query = "INSERT INTO WHERE";
+        run_query($conn, $query);
+        close_db($conn); //Close Database coonection
+    }//End of if(isset($_POST['date']))
+    
+    //Creating the form
+    $form = "<form method=\"post\" enctype=\"multipart/formdata\" ";
+    $form .= "target=\"gform_ajax_frame_1\">";
+    $form .= "</form>";
+    echo $form;
+}//End of function new_ae_survey()
+//END OF DATA TABLE FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////////
+/*
+//START OF DATA ENTRY FUNCTIONS//////////////////////////////////////////////////////////////////////////////////////////////////
+// Function used to add new user to jjhc_Users
+function create_new_user()
+{
+    $conn = open_db();
+    // Create a KMSClient
+    $key = "arn:aws:kms:us-east-1:086480065013:key/915f0862-29f5-4c56-b377-e3f1ff2d4b98";
+    $kmsClient = new Aws\Kms\KmsClient([
+        'profile' => 'default',
+        'version' => '2014-11-01',
+        'region'  => 'us-east-1'
+    ]);
+    
+    //Encrypting passwords
+    $result = $KmsClient->encrypt([
+        'KeyId' => $key,
+        'Plaintext' => mysqli_real_escape_string($conn, $_POST['d24_password']),
+    ]);
+    
+    $d24_password = $result['CiphertextBlob'];
+    unset($_POST['d24_password']);
+    
+    $result = $KmsClient->encrypt([
+        'KeyId' => $key,
+        'Plaintext' => mysqli_real_escape_string($conn, $_POST['sales_password']),
+    ]);
+    
+    $sales_password = $result['CiphertextBlob'];
+    unset($_POST['sales_password']);
+    
+    $ad_user = mysqli_real_escape_string($conn, $_POST['ad_user']);
+    $d24_user = mysqli_real_escape_string($conn, $_POST['d24_user']);
+    $sales_user = mysqli_real_escape_string($conn, $_POST['sales_user']);
+    $role = mysqli_real_escape_string($conn, $_POST['role']);
+    
+    $query = "INSERT INTO `jjhc_Users` (ad_user, d24_user, d24_password, sales_user, sales_password, role) ";
+    $query .= "VALUES (\"".$ad_user."\", \"".$d24_user."\", \"".$d24_password."\", \"".$sales_user."\", \"".$sales_password;
+    $query .= "\", \".$role.\")";
+    
+    if(prepare_execute($conn, $query))
+        echo "User successfully added.\n";
+    
+    else
+        echo "Failed to add user.\n";
+    
+    close_db($conn);
+}//End of function create_new_user
+//END OF DATA ENTRY FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////////
+*/
 // END OF CODE FOR WEB SERVICE CALLS
 ?>
