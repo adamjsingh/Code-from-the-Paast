@@ -1117,32 +1117,32 @@ function new_ae_survey()
     echo $form;
 }//End of function new_ae_survey()
 //END OF DATA TABLE FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////////
-/*
+
 //START OF DATA ENTRY FUNCTIONS//////////////////////////////////////////////////////////////////////////////////////////////////
 // Function used to add new user to jjhc_Users
 function create_new_user()
 {
     $conn = open_db();
     // Create a KMSClient
-    $key = "arn:aws:kms:us-east-1:086480065013:key/915f0862-29f5-4c56-b377-e3f1ff2d4b98";
-    $kmsClient = new Aws\Kms\KmsClient([
+    $key = "arn:aws:kms:us-east-1:086480065013:key/934c4235-c464-4808-b4fa-fceb7ef82000";
+    $kmsClient = new KMSClient([
         'profile' => 'default',
         'version' => '2014-11-01',
         'region'  => 'us-east-1'
     ]);
     
     //Encrypting passwords
-    $result = $KmsClient->encrypt([
+    $result = $kmsClient->encrypt([
         'KeyId' => $key,
-        'Plaintext' => mysqli_real_escape_string($conn, $_POST['d24_password']),
+        'Plaintext' => $_POST['d24_password'],
     ]);
     
     $d24_password = $result['CiphertextBlob'];
     unset($_POST['d24_password']);
     
-    $result = $KmsClient->encrypt([
+    $result = $kmsClient->encrypt([
         'KeyId' => $key,
-        'Plaintext' => mysqli_real_escape_string($conn, $_POST['sales_password']),
+        'Plaintext' => $_POST['sales_password'],
     ]);
     
     $sales_password = $result['CiphertextBlob'];
@@ -1166,6 +1166,6 @@ function create_new_user()
     close_db($conn);
 }//End of function create_new_user
 //END OF DATA ENTRY FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////////
-*/
+
 // END OF CODE FOR WEB SERVICE CALLS
 ?>
