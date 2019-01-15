@@ -65,6 +65,23 @@ function wp_user_retrieval()
    death("User is not logged into wordpress.");
 }//End of function wp_user_retrieval()
 
+//Decrypting Function
+//Calls KMSClient to return decrypted strings
+function decrypt($string)
+{
+    $client =  $kmsClient = new KmsClient([
+        'profile' => 'default',
+        'version' => '2014-11-01',
+        'region'  => 'us-east-1'
+    ]);
+    
+    $plain = $client->decrypt([
+        'CiphertextBlob' => $string,
+    ]);
+    
+    return $plain['Plaintext'];
+}//End of function decrypt($string)
+
 //Percentage Function
 //Caluclate percentage for progress
 function percentage($amount, $max)
@@ -273,11 +290,13 @@ function portal_login()
    $username =  wp_user_retrieval(); //Retrieving user
    
    //Checking username is not in the session
-   if(!isset($_SESSION['username']) || $_SESSION['username'] != $username)
+   if(!isset($_SESSION['ad_user']) || $_SESSION['ad_user'] != $username)
    {
        //Logging out previous session and starting a new.
        portal_logout();
        if(!isset($_SESSION)) session_start();
+       
+       $_SESSION['ad_user'] = $username;
        
        // Create a KMSClient
        $key = "arn:aws:kms:us-east-1:086480065013:key/915f0862-29f5-4c56-b377-e3f1ff2d4b98";
@@ -301,8 +320,8 @@ function portal_login()
    $conn = open_db(); // Create connection
    //Create query to retrieve Dancik Creendtials
    // Commneted out until ready 
-   //$query = "SELECT `DancikUsername`, AES_DECRYPT(`DancikPassword`, ".$some_key."), `Sales_User`, AES_DECRYPT(`Sales_Password`, ".$some_key."),"
-   //$query .= " `RoleID` FROM `".HC_USERS."` WHERE UPPER(`Username`) = \"".strtoupper($_SESSION['username'])."\"";
+   //$query = "SELECT `d24_user`, `d24_paswword`, `sales_user`, `sales_password`, `RoleID` "
+   //$query .= "FROM `".HC_USERS."` WHERE `ad_user` = \"".$_SESSION['ad_user']."\"";
    $query = "SELECT `DancikUsername`, `DancikPassword`, `RoleID` FROM `".HC_USERS."` WHERE UPPER(`Username`) = \"".strtoupper($_SESSION['username'])."\""; 
    $result = run_query($conn, $query);
     
@@ -316,16 +335,19 @@ function portal_login()
    /*
    //Decrypting passwords
    //Use $d24['Plaintext'] and $sales['Plaintext'] as passwords for the login APIs
-   $d24 = $kmsClient->decrypt([
+   $result = $kmsClient->decrypt([
        'CipphertextBlob' => $dancik['DancikPassword']       
    ]);
    
-   $sales = $kmsClient->decrypt([
+   $keyArn = $result['KeyId'];
+   
+   $result = $kmsClient->decrypt([
        'CipphertextBlob' => $dancik['SalesPassword']
    ]);
    */
    
    //Making Login Web Service Call to D24, decoding the JSON and removing password
+   //Replace $dancik['DancikPassword'] with $result['Plaintext']
    $json_str = file_get_contents(HC_PATH."login/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$dancik['DancikPassword']);
    $hold = json_decode($json_str, true);
    unset($dancik['DancikPassword']);
@@ -338,6 +360,7 @@ function portal_login()
    else //No error is returned conditional
    {
        //Extracting D24 Session ID and Account ID
+       //Encrypt Session Id when storing.  Change sesid and acctid to d24_session and d24_account, respectively
        $_SESSION['sesid'] = extractSessionID($hold);
        $json_str = file_get_contents(HC_PATH."/getAccountInfo?d24user=".$_SESSION['dancik_user']."&d24sesid=".$_SESSION['sesid']);
        $hold = json_decode($json_str, true);
@@ -346,6 +369,7 @@ function portal_login()
    }//End of no error is returned conditional   
  
    //Making Login Web Service Call to Sales Portal, decoding the JSON and removing password
+   //Replace $sales_password with $result['Plaintext']
    $json_str = file_get_contents(SP_PATH."signon?user=".$_SESSION['sales_user']."&pwd=".$sales_password);
    //echo $json_str;
    $hold = json_decode($json_str, true);
@@ -359,6 +383,7 @@ function portal_login()
    else //No error is returned conditional
    {
        //Extracting Sales Portal Session
+       //Encrypt Session Id when storing.
        $_SESSION['sales_session'] = extractSessionID($hold);
        //$call = SP_CALL."getAccount".get_sales_credentials();
        //$json_str = file_get_contents($call);
@@ -377,6 +402,7 @@ function portal_logout()
     // Unsetting the session attributes that I created, session destroy does not unset them
     
     //Session Key checks and log off loops
+    // Will have to decrypt session ids
     if(isset($_SESSION['sesid']))
     {
         do //Do While loopto keep loggin off until sucessful, within five tries.
@@ -430,6 +456,7 @@ function death($message)
 //Returns a string for entering credentials for Dancik RESTful Calls
 function get_credentials()
 {
+    //return "?d24user=".$_SESSION['d24_user']."&d24sesid=".decrypt($_SESSION['d24_session'])."&d24_acctid=".$_SESSION['d24_account'];
     return "?d24user=".$_SESSION['username']."&d24sesid=".$_SESSION['sesid']."&d24_acctid=".$_SESSION['acctid'];
 }//End of function get_credentials()
 
@@ -437,6 +464,7 @@ function get_credentials()
 //Returns a string for entering credentials for the Sales Portal Calls
 function get_sales_credentials()
 {
+    //return "?dancik-session-user=".$_SESSION['sales_user']."&dancik-sessionid=".decrypt($_SESSION['sales_session']);
     return "?dancik-session-user=".$_SESSION['sales_user']."&dancik-sessionid=".$_SESSION['sales_session'];
 }
 //END OF CREDENTIAL RETRIEVAL FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////
@@ -1050,7 +1078,7 @@ function printSalesItems($items, $size, $keyword)
 
 //START OF AWS KMS FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////////
 // Checks to see which keys are valid
-function checkKeys()
+function retrieveKey()
 {
     //Create a KMSClient
     $client = new KMSClient([
@@ -1062,6 +1090,7 @@ function checkKeys()
     $result = $client->listKeys();
     $keys = $result->get("Keys");
     $test = "Hoy's my boy!";
+    $key_chain = array();
     
     //For Loop for the keys
     foreach($keys as $key)
@@ -1077,19 +1106,24 @@ function checkKeys()
                 'CiphertextBlob' => $cipher['CiphertextBlob'],
             ]);
             
+            /*
             echo "Key ID: ".$key['KeyId']."</br>";
             echo "Key ARN: ".$key['KeyArn']."</br>";
             echo "Test: ".$test."</br>";
             echo "Encrypted: ".$cipher['CiphertextBlob']."</br>";
             echo "Plain: ".$plain['Plaintext']."</br><br>";
+            */
+            $key_chain[] = $key;
+            
         }//End of try
         
         catch(Exception $e)
         {
-            echo "Failed: ".$e->getMessage()."</br><br>";
+            //echo "Failed: ".$e->getMessage()."</br><br>";
         }
-        
     }//End of foreach($keys as $key)
+        
+    return $key_chain;
 }//End of function checkKeys()
 //END OF AWS KMS FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1122,48 +1156,49 @@ function new_ae_survey()
 // Function used to add new user to jjhc_Users
 function create_new_user()
 {
-    $conn = open_db();
-    // Create a KMSClient
-    $key = "arn:aws:kms:us-east-1:086480065013:key/934c4235-c464-4808-b4fa-fceb7ef82000";
-    $kmsClient = new KMSClient([
-        'profile' => 'default',
-        'version' => '2014-11-01',
-        'region'  => 'us-east-1'
-    ]);
-    
-    //Encrypting passwords
-    $result = $kmsClient->encrypt([
-        'KeyId' => $key,
-        'Plaintext' => $_POST['d24_password'],
-    ]);
-    
-    $d24_password = $result['CiphertextBlob'];
-    unset($_POST['d24_password']);
-    
-    $result = $kmsClient->encrypt([
-        'KeyId' => $key,
-        'Plaintext' => $_POST['sales_password'],
-    ]);
-    
-    $sales_password = $result['CiphertextBlob'];
-    unset($_POST['sales_password']);
-    
-    $ad_user = mysqli_real_escape_string($conn, $_POST['ad_user']);
-    $d24_user = mysqli_real_escape_string($conn, $_POST['d24_user']);
-    $sales_user = mysqli_real_escape_string($conn, $_POST['sales_user']);
-    $role = mysqli_real_escape_string($conn, $_POST['role']);
-    
-    $query = "INSERT INTO `jjhc_Users` (ad_user, d24_user, d24_password, sales_user, sales_password, role) ";
-    $query .= "VALUES (\"".$ad_user."\", \"".$d24_user."\", \"".$d24_password."\", \"".$sales_user."\", \"".$sales_password;
-    $query .= "\", \".$role.\")";
-    
-    if(prepare_execute($conn, $query))
-        echo "User successfully added.\n";
-    
-    else
-        echo "Failed to add user.\n";
-    
-    close_db($conn);
+    if(isset($_POST['ad_user']))
+    {
+        $conn = open_db();
+        // Create a KMSClient
+        $key_chain = retrieveKey();
+        $kmsClient = new KMSClient([
+            'profile' => 'default',
+            'version' => '2014-11-01',
+            'region'  => 'us-east-1'
+        ]);
+        
+        //Encrypting passwords
+        $result = $kmsClient->encrypt([
+            'KeyId' => $key_chain[0]['KeyArn'],
+            'Plaintext' => $_POST['d24_password'],
+        ]);
+        
+        $d24_password = $result['CiphertextBlob'];
+        unset($_POST['d24_password']);
+        
+        $result = $kmsClient->encrypt([
+            'KeyId' => $key_chain[0]['KeyArn'],
+            'Plaintext' => $_POST['sales_password'],
+        ]);
+        
+        $sales_password = $result['CiphertextBlob'];
+        unset($_POST['sales_password']);
+        
+        $ad_user = mysqli_real_escape_string($conn, $_POST['ad_user']);
+        $d24_user = mysqli_real_escape_string($conn, $_POST['d24_user']);
+        $sales_user = mysqli_real_escape_string($conn, $_POST['sales_user']);
+        $role = mysqli_real_escape_string($conn, $_POST['role']);
+        
+        $query = "INSERT INTO `jjhc_Users` (ad_user, d24_user, d24_password, sales_user, sales_password, role) ";
+        $query .= "VALUES (\"".$ad_user."\", \"".$d24_user."\", \"".$d24_password."\", \"".$sales_user."\", \"".$sales_password;
+        $query .= "\", \".$role.\")";
+        
+        if(prepare_execute($conn, $query)) echo "User successfully added.\n";
+            
+        else echo "Failed to add user.\n";
+                
+        close_db($conn);
+    }//End of if(isset($_POST['ad_user'])
 }//End of function create_new_user
 //END OF DATA ENTRY FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////////////
 
