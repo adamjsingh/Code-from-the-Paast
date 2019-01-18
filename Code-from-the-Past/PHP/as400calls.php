@@ -40,36 +40,101 @@ define('SP_PATH', "http://jjh400.jjhaines.com/danciko/dancik-sws/");
 define('SP_CALL', "http://jjh400.jjhaines.com/danciko/dancik-sws/rest/sales-portal/");
 define('MILL_CLAIMS_TABLE', "jjhc_MillClaims");
 define('HC_USERS', "jjhc_Users");
+define('HC_ROLES', "jjhc_Roles");
 define('HC_REDIRECT', "Location:  https://jjhaines.net");
 define('AD_SERVER', "ldap://bal-dc02.jjhaines.com");
 
 //START OF UTILIY FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////////
 //These functions are helper functions used to retrieve and calculate data, and any other things.
 
+// Checks to see which keys are valid
+function retrieveKey()
+{
+    //Create a KMSClient
+    $client = new KMSClient([
+        'profile' => 'default',
+        'version' => '2014-11-01',
+        'region'  => 'us-east-1'
+    ]);
+    
+    $result = $client->listKeys();
+    $keys = $result->get("Keys");
+    $test = "Hoy's my boy!";
+    $key_chain = array();
+    
+    //For Loop for the keys
+    foreach($keys as $key)
+    {
+        try //Trying to encrypt and decrypt
+        {
+            $cipher = $client->encrypt([
+                'KeyId' => $key['KeyArn'],
+                'Plaintext' => $test,
+            ]);
+            
+            $plain = $client->decrypt([
+                'CiphertextBlob' => $cipher['CiphertextBlob'],
+            ]);
+            
+            /*
+             echo "Key ID: ".$key['KeyId']."</br>";
+             echo "Key ARN: ".$key['KeyArn']."</br>";
+             echo "Test: ".$test."</br>";
+             echo "Encrypted: ".$cipher['CiphertextBlob']."</br>";
+             echo "Plain: ".$plain['Plaintext']."</br><br>";
+             */
+            $key_chain[] = $key;
+            
+        }//End of try
+        
+        catch(Exception $e)
+        {
+            //echo "Failed: ".$e->getMessage()."</br><br>";
+        }
+    }//End of foreach($keys as $key)
+    
+    return $key_chain;
+}//End of function checkKeys()
+
+//Random String Generator
+function rsg()
+{
+    $length = mt_rand(10, 20);
+    $string = "";
+    
+    //For loop for generating a random character
+    for($i=0; $i<$length; $i++)
+    {
+        $string .= chr(mt_rand(0, 255));
+    }
+
+    return $string;
+}//End of function rsg()
+
 //WP User Retrieval
 //Function accesses the username from the cookies
-function wp_user_retrieval()
+function ad_user_retrieval()
 {
     //For Loop for Cookies
     foreach($_COOKIE as $key => $value)
     {
         //Check for the right key
-        if(preg_match("/^wordpress_logged_in/", $key))
+        if(preg_match("/^samlname_id/", $key))
         {
             $matches = array();
-            preg_match("/^[^\|]*/", $value, $matches);
+            preg_match("/^[^\|]*/", $value, $matches);//Patternt will need to change
             return trim($matches[0]);
-        }//End of if(preg_match("/^wordpress_logged_in/", $key))
+        }//End of if(preg_match("/^samlname_id/", $key))
     }//End of foreach($_COOKIE as $key => $value)
         
    death("User is not logged into wordpress.");
-}//End of function wp_user_retrieval()
+}//End of function ad_user_retrieval()
 
 //Decrypting Function
 //Calls KMSClient to return decrypted strings
 function decrypt($string)
 {
-    $client =  $kmsClient = new KmsClient([
+    $client = new KMSClient([
         'profile' => 'default',
         'version' => '2014-11-01',
         'region'  => 'us-east-1'
@@ -287,7 +352,7 @@ function check_session()
 function portal_login()
 {
    /*
-   $username =  wp_user_retrieval(); //Retrieving user
+   $username =  ad_user_retrieval(); //Retrieving user
    
    //Checking username is not in the session
    if(!isset($_SESSION['ad_user']) || $_SESSION['ad_user'] != $username)
@@ -298,15 +363,85 @@ function portal_login()
        
        $_SESSION['ad_user'] = $username;
        
+       $conn = open_db(); // Create connection
+       //Create query to retrieve Dancik Creendtials
+
+       $query = "SELECT `d24_user`, `d24_paswword`, `sales_user`, `sales_password`, `role` ";
+       $query .= "FROM `".HC_USERS."` WHERE `ad_user` = \"".$_SESSION['ad_user']."\"";
+       $query_result = run_query($conn, $query);
+       $user = $query_result->fetch_assoc();
+       close_db($conn);
+       
+       foreach($user as $field)
+       {
+         if(empty($field)) death("User's information is incomplete.");
+       }
+       
+       $_SESSION['d24_user'] = $user['d24_user'];
+       
        // Create a KMSClient
-       $key = "arn:aws:kms:us-east-1:086480065013:key/915f0862-29f5-4c56-b377-e3f1ff2d4b98";
-       $kmsClient = new Aws\Kms\KmsClient([
+       $kmsClient = new KmsClient([
         'profile' => 'default',
         'version' => '2014-11-01',
         'region'  => 'us-east-1'
        ]);
        
-       //All the code below will go here when ready.
+       $result = $kmsClient->decrypt([
+           'CipphertextBlob' => $user['d24_password']
+       ]);
+       
+       $keyArn = $result['KeyId'];
+       $json_str = file_get_contents(HC_PATH."login/?d24user=".$_SESSION['d24_user']."&d24pwd=".$result['Plaintext']);
+       $hold = json_decode($json_str, true);
+       
+       if(isset($hold['errors'])) // If JSON returned is an error message conditional
+       {
+           death("Fails to log into D24.");
+       }//End of if(isset($hold['errors']))
+       
+       else //No error is returned conditional
+       {
+           //Extracting D24 Session ID and Account ID
+           //Encrypt Session Id when storing.  Change sesid and acctid to d24_session and d24_account, respectively
+           $_SESSION['d24_session'] = $kmsClient->encrypt([
+               'Plaintext' => extractSessionID($hold),
+               'KeyId' => $keyArn
+           ]);
+          
+           $json_str = file_get_contents(HC_PATH."/getAccountInfo?d24user=".$_SESSION['d24_user']."&d24sesid=".decrypt($_SESSION['d24_session']));
+           $hold = json_decode($json_str, true);
+           $accountInfo = $hold['acct'];
+           $_SESSION['d24_account'] = $accountInfo['accountid'];
+       }//End of no error is returned conditional
+       
+       $result = $kmsClient->decrypt([
+           'CipphertextBlob' => $user['sales_password']
+       ]);
+       
+       $_SESSION['sales_user'] = $user['sales_user'];
+       
+       $result = $kmsClient->decrypt([
+           'CipphertextBlob' => $user['sales_password']
+       ]);
+       
+       $json_str = file_get_contents(SP_PATH."signon?user=".$_SESSION['sales_user']."&pwd=".$result['Plaintext']);
+       $hold = json_decode($json_str, true);
+       
+       if(isset($hold['errors'])) // If JSON returned is an error message conditional
+       {
+           death("Fails to log into Dancik Sales Portal.");
+       }//End of if(isset($hold['errors']))
+       
+       else //No error is returned conditional
+       {
+           //Extracting Sales Portal Session
+           $_SESSION['sales_session'] = $kmsClient->encrypt([
+               'Plaintext' => extractSessionID($hold),
+               'KeyId' => $keyArn
+           ]);
+       }//End of no error is returned conditional
+       
+        $_SESSION['role'] = $user['role'];
    }//End of if(!isset($_SESSION['username']) || $_SESSION['username'] != $username)
    */
    
@@ -317,11 +452,6 @@ function portal_login()
    
    //$_SESSION['username'] = $username();
    
-   $conn = open_db(); // Create connection
-   //Create query to retrieve Dancik Creendtials
-   // Commneted out until ready 
-   //$query = "SELECT `d24_user`, `d24_paswword`, `sales_user`, `sales_password`, `RoleID` "
-   //$query .= "FROM `".HC_USERS."` WHERE `ad_user` = \"".$_SESSION['ad_user']."\"";
    $query = "SELECT `DancikUsername`, `DancikPassword`, `RoleID` FROM `".HC_USERS."` WHERE UPPER(`Username`) = \"".strtoupper($_SESSION['username'])."\""; 
    $result = run_query($conn, $query);
     
@@ -332,19 +462,6 @@ function portal_login()
    $_SESSION['role'] = $dancik['RoleID'];
    close_db($conn); //Closing Database connection
 
-   /*
-   //Decrypting passwords
-   //Use $d24['Plaintext'] and $sales['Plaintext'] as passwords for the login APIs
-   $result = $kmsClient->decrypt([
-       'CipphertextBlob' => $dancik['DancikPassword']       
-   ]);
-   
-   $keyArn = $result['KeyId'];
-   
-   $result = $kmsClient->decrypt([
-       'CipphertextBlob' => $dancik['SalesPassword']
-   ]);
-   */
    
    //Making Login Web Service Call to D24, decoding the JSON and removing password
    //Replace $dancik['DancikPassword'] with $result['Plaintext']
@@ -403,23 +520,26 @@ function portal_logout()
     
     //Session Key checks and log off loops
     // Will have to decrypt session ids
+    //Change sesid to d24_session
     if(isset($_SESSION['sesid']))
     {
-        do //Do While loopto keep loggin off until sucessful, within five tries.
+        do //Do While loop to keep loggin off until sucessful, within five tries.
         {
+            //Change dancik_user to d24_user and sesid to decrypt($_SESSION['d24_session'])
             $json_str = file_get_contents(HC_PATH."logoff/?d24user=".$_SESSION['dancik_user']."&d24pwd=".$_SESSION['sesid']);
             $d24 = json_decode($json_str, true);
             $d24_count++;
         }while(!isset($d24['success']) || $d24_count < 5); //Keep trying to logoff until successful
         
         if(!isset($d24['success'])) echo "Failure to logoff D24 Web Service Calls.  Contact JJ Haines IT support.<br>";
-        unset($_SESSION['sesid']);
+        unset($_SESSION['sesid']); //Change sesid to d24_session
     }//End of if(isset($_SESSION['sesid']))
     
     if(isset($_SESSION['sales_session']))
     {
-        do //Do While loopto keep loggin off until sucessful, within five tries.
+        do //Do While loop to keep loggin off until sucessful, within five tries.
         {
+            //Change dancik_user to sales_user and decrypt($_SESSION['sales_session']
             $json_str = file_get_contents(SP_PATH."signoff?dancik-session-user=".$_SESSION['dancik_user']."&dancik-sessionid=".$_SESSION['sales_session']);
             $sp = json_decode($json_str, true);
             $sp_count++;
@@ -429,9 +549,9 @@ function portal_logout()
         unset($_SESSION['sales_session']);
     }//End of if(isset($_SESSION['sales_session']))
     
-    if(isset($_SESSION['username'])) unset($_SESSION['username']);
-    if(isset($_SESSION['acctid'])) unset($_SESSION['acctid']);
-    if(isset($_SESSION['dancik_user'])) unset($_SESSION['dancik_user']);
+    if(isset($_SESSION['username'])) unset($_SESSION['username']); //Change username to ad_user
+    if(isset($_SESSION['acctid'])) unset($_SESSION['acctid']); //Change acctid to d24_account
+    if(isset($_SESSION['dancik_user'])) unset($_SESSION['dancik_user']); //Change dancik_user to d24_user
     if(isset($_SESSION['role'])) unset($_SESSION['role']);
     if(isset($_SESSION['sales_user'])) unset($_SESSION['sales_user']);
     
@@ -1075,57 +1195,6 @@ function printSalesItems($items, $size, $keyword)
     echo "</div><br><br>"; //End of dive that aligns the previous and next buttons
 }//End of function printSalesItems($items, $size, $keyword)
 //END OF SALES PORTAL ITEMS FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////////
-
-//START OF AWS KMS FUNCTIONS/////////////////////////////////////////////////////////////////////////////////////////////////////
-// Checks to see which keys are valid
-function retrieveKey()
-{
-    //Create a KMSClient
-    $client = new KMSClient([
-        'profile' => 'default',
-        'version' => '2014-11-01',
-        'region'  => 'us-east-1'
-    ]);
-    
-    $result = $client->listKeys();
-    $keys = $result->get("Keys");
-    $test = "Hoy's my boy!";
-    $key_chain = array();
-    
-    //For Loop for the keys
-    foreach($keys as $key)
-    {
-        try //Trying to encrypt and decrypt
-        {
-            $cipher = $client->encrypt([
-                'KeyId' => $key['KeyArn'],
-                'Plaintext' => $test,
-            ]);
-            
-            $plain = $client->decrypt([
-                'CiphertextBlob' => $cipher['CiphertextBlob'],
-            ]);
-            
-            /*
-            echo "Key ID: ".$key['KeyId']."</br>";
-            echo "Key ARN: ".$key['KeyArn']."</br>";
-            echo "Test: ".$test."</br>";
-            echo "Encrypted: ".$cipher['CiphertextBlob']."</br>";
-            echo "Plain: ".$plain['Plaintext']."</br><br>";
-            */
-            $key_chain[] = $key;
-            
-        }//End of try
-        
-        catch(Exception $e)
-        {
-            //echo "Failed: ".$e->getMessage()."</br><br>";
-        }
-    }//End of foreach($keys as $key)
-        
-    return $key_chain;
-}//End of function checkKeys()
-//END OF AWS KMS FUNCTIONS///////////////////////////////////////////////////////////////////////////////////////////////////////
 
 //END OF SEARCHING AND PRINTING FUNCTIONS////////////////////////////////////////////////////////////////////////////////////////
 
